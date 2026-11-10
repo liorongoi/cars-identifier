@@ -356,3 +356,23 @@ def test_polite_client_pauses_host_with_long_retry_after() -> None:
         client.get("https://slow.test/b.jpg", check_robots=False)
     assert calls["slow.test"] == 1 and 600.0 not in sleeps  # no long sleep, no 2nd request
     assert client.get("https://fast.test/c.jpg", check_robots=False).content == b"ok"
+
+
+def test_recheck_titles_rejects_other_models(engine: Engine) -> None:
+    from carid.collector.runner import recheck_titles
+    from carid.engine import SourceInfo
+    from carid.models import ReviewStatus
+    from tests.conftest import label_for
+
+    rng = np.random.default_rng(21)
+    ids = []
+    for title in ("Alpha Roadster interior", "Alpha Wagon dashboard", "Steering wheel"):
+        r = engine.ingest(to_jpeg(draw_interior(CLASS_STYLES["Alpha/Roadster/2010"], rng)),
+                          label_for(engine, "Alpha/Roadster/2010"),
+                          SourceInfo("openverse", title=title), interior_score=0.9)
+        ids.append(r.image_id)
+    bad = recheck_titles(engine)
+    assert [b[1] for b in bad] == ["Alpha Wagon dashboard"]
+    with engine.db.session() as s:
+        assert s.get(Image, ids[1]).review_status == ReviewStatus.rejected  # type: ignore[union-attr]
+        assert s.get(Image, ids[2]).review_status == ReviewStatus.pending  # type: ignore[union-attr]

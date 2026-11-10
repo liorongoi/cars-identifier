@@ -180,3 +180,16 @@ def test_plain_word_model_names_need_the_make() -> None:
                  model_aliases=[], year_start=1995, year_end=None)
     assert infer_label("CRV dashboard 2018", crv) is not None
     assert infer_label("CR V dashboard 2018", crv) is not None
+
+
+def test_title_outranks_tags() -> None:
+    t = Target(make_id=1, make="Audi", make_aliases=[], model_id=1, model="A1",
+               model_aliases=[], year_start=2010, year_end=None)
+    tags = "audi a1 interior dashboard"
+    assert infer_label(f"AUDI R8 V10 SPYDER {tags}", t, title="AUDI R8 V10 SPYDER") is None
+    assert infer_label(f"Audi S3 interior {tags}", t, title="Audi S3 interior") is None
+    by_title = infer_label(f"Audi A1 interior {tags}", t, title="Audi A1 interior")
+    by_tags = infer_label(f"Steering wheel {tags}", t, title="Steering wheel")
+    assert by_title is not None and by_tags is not None
+    assert by_tags.confidence < by_title.confidence
+    assert "only in tags" in by_tags.reason

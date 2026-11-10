@@ -78,12 +78,33 @@ def _mentions_model(text: str, make_names: list[str], model_name: str) -> bool:
     return capitalised and any(_phrase_in(text, mk) for mk in make_names)
 
 
-def infer_label(text: str, target: Target, preset_year: int | None = None) -> LabelGuess | None:
-    """Return a label guess, or None if the text does not clearly refer to the target model."""
+def title_verdict(title: str, target: Target) -> str:
+    """'match' if the title names the model, 'other' if it names the make but not the
+    model (e.g. "Audi R8 Spyder" for an A1 search), 'silent' if it names neither."""
+    model_names = [target.model, *target.model_aliases]
+    make_names = [target.make, *target.make_aliases]
+    if any(_mentions_model(title, make_names, n) for n in model_names):
+        return "match"
+    if any(_phrase_in(title, n) for n in make_names):
+        return "other"
+    return "silent"
+
+
+def infer_label(text: str, target: Target, preset_year: int | None = None,
+                title: str | None = None) -> LabelGuess | None:
+    """Return a label guess, or None if the text does not clearly refer to the target model.
+
+    ``title`` (when given, also part of ``text``) outranks tags and descriptions: a title
+    that names the make but another model rejects the image, and a model found only in
+    tags/description lowers the confidence.
+    """
     low = text.lower()
     model_names = [target.model, *target.model_aliases]
     make_names = [target.make, *target.make_aliases]
     if not any(_mentions_model(text, make_names, n) for n in model_names):
+        return None
+    verdict = title_verdict(title, target) if title else "match"
+    if verdict == "other":
         return None
     make_named = any(_phrase_in(text, n) for n in make_names)
 
@@ -130,8 +151,8 @@ def infer_label(text: str, target: Target, preset_year: int | None = None) -> La
                  if normalize_name(m) not in {normalize_name(n) for n in model_names}
                  and len(normalize_name(m)) > 3 and _mentions_model(text, make_names, m)]
 
-    confidence = 0.55
-    reasons = ["model named"]
+    confidence = 0.55 if verdict == "match" else 0.4
+    reasons = ["model named" if verdict == "match" else "model only in tags/description"]
     if make_named:
         confidence += 0.1
         reasons.append("make named")

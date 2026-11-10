@@ -170,7 +170,7 @@ class Collector:
 
     def _process(self, connector: SourceConnector, target: Target, cand: Any,
                  counters: Counter[str]) -> tuple[str, int | None]:
-        guess = infer_label(cand.text, target, cand.preset_year)
+        guess = infer_label(cand.text, target, cand.preset_year, title=cand.title or None)
         if guess is None:
             return "label_mismatch", None
         if guess.interior_hint is False:
@@ -196,3 +196,21 @@ class Collector:
         except ImageDecodeError:
             return "invalid_image", None
         return result.status, result.image_id
+
+
+def recheck_titles(engine: Engine, actor: str = "recheck") -> list[tuple[int, str]]:
+    """Reject stored images whose title names the make but a different model."""
+    from carid.collector.labeler import title_verdict
+    from carid.models import Image, ReviewStatus
+
+    with engine.db.session() as s:
+        targets = {t.model_id: t for t in build_targets(s)}
+        rows = s.execute(select(Image.id, Image.model_id, Image.title).where(
+            Image.review_status != ReviewStatus.rejected, Image.title.is_not(None))).all()
+    bad = [(iid, title) for iid, model_id, title in rows
+           if title and model_id in targets
+           and title_verdict(title, targets[model_id]) == "other"]
+    for iid, _ in bad:
+        engine.set_review_status(iid, ReviewStatus.rejected, actor)
+    engine.save_index()
+    return bad

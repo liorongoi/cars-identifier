@@ -129,6 +129,17 @@ def identify(image: Path, top_k: int = 10, mode: str | None = None) -> None:
         typer.echo(f"! {w}")
 
 
+@app.command("recheck-labels")
+def recheck_labels() -> None:
+    """Reject stored images whose title names the make but a different model."""
+    from carid.collector.runner import recheck_titles
+
+    bad = recheck_titles(_services().engine)
+    for iid, title in bad:
+        typer.echo(f"rejected #{iid}: {title}")
+    typer.echo(f"{len(bad)} image(s) rejected")
+
+
 @app.command("train-adapter")
 def train_adapter() -> None:
     """Fit the LDA adapter on the labelled references and start using it."""
