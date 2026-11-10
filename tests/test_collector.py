@@ -376,3 +376,32 @@ def test_recheck_titles_rejects_other_models(engine: Engine) -> None:
     with engine.db.session() as s:
         assert s.get(Image, ids[1]).review_status == ReviewStatus.rejected  # type: ignore[union-attr]
         assert s.get(Image, ids[2]).review_status == ReviewStatus.pending  # type: ignore[union-attr]
+
+
+def test_openverse_waits_short_backoff_but_stops_on_long_one(engine: Engine) -> None:
+    from carid.collector.sources import OpenverseSource
+
+    state = {"n": 0, "retry": "120"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(429, headers={"Retry-After": state["retry"]})
+        body = {"page_count": 1, "results": [_ov_result(1, "Alpha Roadster")]}
+        return httpx.Response(200, json=body)
+
+    client, sleeps = _client(handler)
+    src = OpenverseSource({"enabled": True, "max_queries_per_model": 1}, client)
+    assert [c.url for c in src.search(_target(engine), 5)] == ["https://img.test/1.jpg"]
+    assert 120.0 in sleeps  # burst limit: waited, did not give up
+
+    state.update(n=0, retry="36000")  # daily quota: stop the source, no 10-hour sleep
+    client2, sleeps2 = _client(handler)
+    src2 = OpenverseSource({"enabled": True, "max_queries_per_model": 1}, client2)
+    logs: list[str] = []
+    with engine.db.session() as s:
+        targets = build_targets(s)
+    counters = Collector(engine, {"openverse": src2}).run(targets, log_fn=logs.append)
+    assert counters.get("sources_exhausted") == 1, (counters, logs)
+    assert counters.get("source_errors", 0) == 0
+    assert 36000.0 not in sleeps2

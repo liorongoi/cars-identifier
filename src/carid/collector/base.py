@@ -67,6 +67,10 @@ class FetchError(RuntimeError):
     pass
 
 
+class HostPaused(FetchError):
+    """The host asked for a back-off longer than we are willing to wait."""
+
+
 class SourceExhausted(RuntimeError):
     """The source's quota is used up for now; skip it for the rest of the job."""
 
@@ -91,6 +95,7 @@ class PoliteClient:
         self.host_intervals: dict[str, float] = {}  # per-host minimum spacing (API limits)
         self.max_wait = max_wait  # longer Retry-After => pause that host instead of sleeping
         self._cooldown: dict[str, float] = {}
+        self.host_max_wait: dict[str, float] = {}  # per-host override of max_wait
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._lock = threading.Lock()
         self._sleep = sleep
@@ -131,7 +136,7 @@ class PoliteClient:
         host = urlsplit(url).netloc
         until = self._cooldown.get(host, 0.0)
         if until > time.monotonic():
-            raise FetchError(f"{host} asked us to back off for {until - time.monotonic():.0f}s")
+            raise HostPaused(f"{host} asked us to back off for {until - time.monotonic():.0f}s")
         delay = 2.0
         for attempt in range(self.max_retries + 1):
             self._throttle(host)
@@ -145,11 +150,11 @@ class PoliteClient:
                 continue
             if r.status_code == 429 or r.status_code >= 500:
                 wait = _retry_after(r)
-                if wait > self.max_wait:
+                if wait > self.host_max_wait.get(host, self.max_wait):
                     # Don't block the whole job on one throttled host: skip it for now,
                     # other hosts keep going; URLs are retried on the next run.
                     self._cooldown[host] = time.monotonic() + wait
-                    raise FetchError(f"HTTP {r.status_code} for {url}: {host} asks to wait "
+                    raise HostPaused(f"HTTP {r.status_code} for {url}: {host} asks to wait "
                                      f"{wait:.0f}s; pausing that host")
                 if attempt == self.max_retries:
                     raise FetchError(f"HTTP {r.status_code} for {url} after retries")
@@ -176,10 +181,10 @@ def _retry_after(r: httpx.Response) -> float:
     if not value:
         return 0.0
     try:
-        return min(float(value), 300.0)
+        return max(0.0, float(value))
     except ValueError:
         try:
-            return max(0.0, min(parsedate_to_datetime(value).timestamp() - time.time(), 300.0))
+            return max(0.0, parsedate_to_datetime(value).timestamp() - time.time())
         except (TypeError, ValueError):
             return 0.0
 

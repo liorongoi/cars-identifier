@@ -18,7 +18,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
-from carid.collector.base import Candidate, FetchError, SourceConnector, SourceExhausted, Target
+from carid.collector.base import (
+    Candidate,
+    FetchError,
+    HostPaused,
+    SourceConnector,
+    SourceExhausted,
+    Target,
+)
 from carid.collector.labeler import _phrase_in
 
 log = logging.getLogger(__name__)
@@ -415,7 +422,11 @@ class OpenverseSource(SourceConnector):
         if http is not None:
             # Burst limit is 20/min for anonymous use: keep ~3.2 s between API calls.
             http.host_intervals.setdefault("api.openverse.org",
-                                           float(config.get("min_interval_s", 3.2)))
+                                           float(config.get("min_interval_s", 3.5)))
+            # It is the only search source: a short burst back-off is worth waiting for;
+            # longer ones mean the daily quota is gone (SourceExhausted below).
+            http.host_max_wait.setdefault("api.openverse.org",
+                                          float(config.get("max_backoff_s", 900)))
 
     def _auth_headers(self) -> dict[str, str]:
         cid = os.environ.get(str(self.config.get("client_id_env", "OPENVERSE_CLIENT_ID")), "")
@@ -434,6 +445,8 @@ class OpenverseSource(SourceConnector):
         try:
             r = self.http.get(self.API, params=params, check_robots=False,
                               headers=self._auth_headers())
+        except HostPaused as exc:
+            raise SourceExhausted(f"Openverse rate limit reached ({exc})") from exc
         except FetchError as exc:
             if "429" in str(exc):
                 raise SourceExhausted("Openverse rate limit reached") from exc
