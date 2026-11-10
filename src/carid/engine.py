@@ -124,7 +124,8 @@ class Engine:
         self._labels_version = -1
         self._version = 0
         self._labels_lock = threading.Lock()
-        self._phashes: dict[str, int] = {}
+        self._ph_ids = np.zeros(0, dtype=np.int64)
+        self._ph_vals = np.zeros(0, dtype=np.uint64)
         self._load_phashes()
 
     # ------------------------------------------------------------------ status
@@ -139,6 +140,18 @@ class Engine:
             "index_sizes": self.index.sizes(),
             "matcher_mode": self.settings.matcher_mode,
         }
+
+    def index_warnings(self) -> list[str]:
+        """Detect an index that does not match the database (e.g. after an embedder change)."""
+        with self.db.session() as s:
+            n_images = s.scalar(select(func.count()).select_from(Image).where(
+                Image.review_status != ReviewStatus.rejected)) or 0
+        whole = self.index.get("whole")
+        n_vecs = len(whole) if whole is not None else 0
+        if n_images and n_vecs < n_images * 0.98:
+            return [f"Index out of date: {n_images} reference images but {n_vecs} indexed for "
+                    f"embedder '{self.embedder.name}'. Run 'Rebuild index' (Jobs page)."]
+        return []
 
     def invalidate_labels(self) -> None:
         self._version += 1
@@ -158,19 +171,23 @@ class Engine:
 
     def _load_phashes(self) -> None:
         with self.db.session() as s:
-            self._phashes = {p: i for i, p in s.execute(select(Image.id, Image.phash)).all()}
+            rows = s.execute(select(Image.id, Image.phash)).all()
+        self._ph_ids = np.array([r[0] for r in rows], dtype=np.int64)
+        self._ph_vals = np.array([int(r[1], 16) for r in rows], dtype=np.uint64)
+
+    def _add_phash(self, image_id: int, phash: str) -> None:
+        self._ph_ids = np.append(self._ph_ids, np.int64(image_id))
+        self._ph_vals = np.append(self._ph_vals, np.uint64(int(phash, 16)))
 
     def _near_duplicate(self, phash: str) -> int | None:
-        if not self._phashes:
+        """Closest stored image by perceptual-hash Hamming distance (vectorised popcount)."""
+        if self._ph_vals.size == 0:
             return None
-        q = int(phash, 16)
-        hashes = np.fromiter((int(h, 16) for h in self._phashes), dtype=np.uint64,
-                             count=len(self._phashes))
-        x = np.bitwise_xor(hashes, np.uint64(q))
-        dist = np.array([int(v).bit_count() for v in x.tolist()])
+        x = np.bitwise_xor(self._ph_vals, np.uint64(int(phash, 16)))
+        dist = np.unpackbits(x.view(np.uint8)).reshape(-1, 64).sum(axis=1)
         j = int(np.argmin(dist))
-        if dist[j] <= self.settings.near_duplicate_distance:
-            return list(self._phashes.values())[j]
+        if int(dist[j]) <= self.settings.near_duplicate_distance:
+            return int(self._ph_ids[j])
         return None
 
     # ---------------------------------------------------------------- analysis
@@ -426,7 +443,7 @@ class Engine:
                 s.flush()
                 self._index_image(s, image, stored)
                 image_id = image.id
-            self._phashes[phash] = image_id
+            self._add_phash(image_id, phash)
         self.invalidate_labels()
         return IngestResult("added", image_id)
 
@@ -536,6 +553,8 @@ class Engine:
                 return
             img = decode_image((self.settings.images_dir / image.path).read_bytes(),
                                self.settings.max_image_pixels)
+            # Old vectors reference part rows _index_image is about to replace.
+            self.index.drop_images({image_id})
             self._index_image(s, image, img)
 
     def purge_old_queries(self) -> int:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -16,6 +17,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFi
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
+from starlette.concurrency import run_in_threadpool
 
 from carid import __version__
 from carid.api.schemas import AddMakeIn, AddModelIn, FeedbackIn, ImagePatch, JobIn
@@ -39,6 +41,7 @@ from carid.taxonomy import (
     ModelSpec,
     catalog_tree,
     find_make,
+    find_model,
     load_taxonomy_file,
     upsert_make,
 )
@@ -57,8 +60,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         app.state.svc = svc
         if start_jobs:
             svc.jobs.start()
-        svc.engine.purge_old_queries()
+        purger = asyncio.create_task(_purge_periodically(svc))
         yield
+        purger.cancel()
         svc.jobs.stop()
         svc.engine.save_index()
 
@@ -78,7 +82,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
     @app.get("/api/health")
     def health(request: Request) -> dict[str, Any]:
         engine = svc(request).engine
-        warnings = []
+        warnings = engine.index_warnings()
         if not engine.describe()["deep_models"]:
             warnings.append("Deep embedder not installed: using the lightweight fallback. "
                             "Install the 'ml' extra for production accuracy.")
@@ -144,7 +148,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             manual_parts=_parse_manual_parts(manual_parts), case_ref=case_ref or None,
             analyst=analyst or None,
         )
-        return engine.identify(data, opts)
+        # CPU-heavy: run off the event loop so other requests stay responsive.
+        result: dict[str, Any] = await run_in_threadpool(engine.identify, data, opts)
+        return result
 
     @app.get("/api/identifications")
     def list_identifications(request: Request, limit: int = Query(50, le=500),
@@ -283,8 +289,9 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             _, models_added, gens_added = upsert_make(
                 s, MakeSpec(name=make.name, models=[_model_spec(body)]),
                 added_by=f"analyst:{body.requested_by or ''}")
-            model_id = next(m.id for m in make.models if m.name.lower() == body.name.lower()
-                            or body.name.lower() in [a.lower() for a in m.aliases])
+            found = find_model(make, body.name)
+            assert found is not None  # upsert_make just created or matched it
+            model_id = found.id
             s.add(AuditEvent(actor=body.requested_by, action="model.add",
                              target=f"model:{model_id}", details={"name": body.name}))
         jobs = []
@@ -390,13 +397,12 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         with engine.db.session() as s:
             model = _get_or_404(s.get(VehicleModel, model_id), "model")
             make_id = model.make_id
-        res = engine.ingest(
-            data, ReferenceLabel(make_id, model_id, year_start, year_end or year_start,
-                                 None, 0.95),
-            SourceInfo("upload", license=license, credit=credit or actor,
-                       title=file.filename),
+        res = await run_in_threadpool(
+            engine.ingest, data,
+            ReferenceLabel(make_id, model_id, year_start, year_end or year_start, None, 0.95),
+            SourceInfo("upload", license=license, credit=credit or actor, title=file.filename),
             interior_score=1.0, review_status=ReviewStatus.approved)
-        engine.save_index()
+        await run_in_threadpool(engine.save_index)
         return {"status": res.status, "image_id": res.image_id, "detail": res.detail}
 
     # ---------------------------------------------------------------- jobs
@@ -460,6 +466,18 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
 
 
 # ---------------------------------------------------------------------- helpers
+
+PURGE_INTERVAL_S = 3600
+
+
+async def _purge_periodically(svc: Services) -> None:
+    """Enforce query-image retention while the server runs, not only at start-up."""
+    while True:
+        try:
+            await run_in_threadpool(svc.engine.purge_old_queries)
+        except Exception:
+            log.exception("query retention purge failed")
+        await asyncio.sleep(PURGE_INTERVAL_S)
 
 
 async def _read_limited(file: UploadFile, max_mb: int) -> bytes:

@@ -114,9 +114,9 @@ def upsert_make(session: Session, spec: MakeSpec, added_by: str) -> tuple[Make, 
     for mspec in spec.models:
         model = find_model(make, mspec.name)
         if model is None:
+            # Setting make= also appends to make.models (back_populates).
             model = VehicleModel(make=make, name=mspec.name.strip(), aliases=mspec.aliases)
             session.add(model)
-            make.models.append(model)
             models_added += 1
         else:
             model.aliases = sorted(set(model.aliases) | set(mspec.aliases))

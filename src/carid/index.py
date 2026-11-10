@@ -52,6 +52,16 @@ class VectorIndex:
         """Hide images from search results (physically dropped on ``compact``)."""
         self._removed.update(image_ids)
 
+    def drop_images(self, image_ids: set[int]) -> None:
+        """Physically delete all vectors of these images (before re-indexing them)."""
+        self._consolidate()
+        if self._image_ids.size and image_ids:
+            keep = ~np.isin(self._image_ids, np.fromiter(image_ids, np.int64))
+            self._part_ids, self._image_ids = self._part_ids[keep], self._image_ids[keep]
+            self._vecs = self._vecs[keep]
+            self._faiss = None
+        self._removed.difference_update(image_ids)
+
     def compact(self) -> None:
         self._consolidate()
         if self._removed:
@@ -141,6 +151,12 @@ class IndexSet:
         with self.lock:
             for idx in self.parts.values():
                 idx.remove_images(image_ids)
+            self._dirty = True
+
+    def drop_images(self, image_ids: set[int]) -> None:
+        with self.lock:
+            for idx in self.parts.values():
+                idx.drop_images(image_ids)
             self._dirty = True
 
     def clear(self) -> None:

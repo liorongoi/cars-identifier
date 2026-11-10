@@ -80,6 +80,7 @@ class ClipEmbedder:
             dummy = self.preprocess(Image.new("RGB", (64, 64))).unsqueeze(0).to(self.device)
             self.dim = int(self.model.encode_image(dummy).shape[-1])
         self._lock = threading.Lock()
+        self._prompt_vecs: Vectors | None = None
 
     def embed(self, images: list[RGBImage]) -> Vectors:
         if not images:
@@ -103,7 +104,9 @@ class ClipEmbedder:
     def interior_score(self, img: RGBImage) -> float:
         """Probability-like score that the image shows a car interior (zero-shot)."""
         img_vec = self.embed([img])[0]
-        txt = self.embed_text(INTERIOR_PROMPTS + NON_INTERIOR_PROMPTS)
+        if self._prompt_vecs is None:  # constant prompts: encode once
+            self._prompt_vecs = self.embed_text(INTERIOR_PROMPTS + NON_INTERIOR_PROMPTS)
+        txt = self._prompt_vecs
         logits = 100.0 * (txt @ img_vec)
         p = np.exp(logits - logits.max())
         p /= p.sum()

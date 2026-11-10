@@ -132,7 +132,7 @@ def _target() -> Target:
     ("Toyota Corolla E210 dashboard", {"generation_id": 11, "year_start": 2018}),
     ("Toyota Corolla 2014-2016 cockpit", {"year_start": 2014, "year_end": 2016}),
     ("Toyota Corolla 2014–16 cockpit", {"year_start": 2014, "year_end": 2016}),
-    ("Corolla seen from the side, exterior", {"interior_hint": False}),
+    ("Toyota Corolla seen from the side, exterior", {"interior_hint": False}),
     ("toyota corolla", {"year_start": None, "interior_hint": None}),
 ])
 def test_infer_label(text: str, expect: dict[str, object]) -> None:
@@ -149,8 +149,8 @@ def test_infer_label_rejects_and_penalises() -> None:
     mixed = infer_label("2015 Toyota Corolla vs Camry interior", t)
     assert clean is not None and mixed is not None
     assert mixed.confidence < clean.confidence
-    assert infer_label("Corolla interior 1950", t).year_start is None  # type: ignore[union-attr]
-    preset = infer_label("Corolla", t, preset_year=2020)
+    assert infer_label("Toyota Corolla interior 1950", t).year_start is None  # type: ignore[union-attr]
+    preset = infer_label("Toyota Corolla", t, preset_year=2020)
     assert preset is not None and preset.year_start == 2020
 
 
@@ -159,3 +159,24 @@ def test_short_model_names_need_word_boundaries() -> None:
                model_aliases=[], year_start=1996, year_end=None)
     assert infer_label("Audi A3 interior", t) is not None
     assert infer_label("Audi A35 interior", t) is None
+
+
+def test_plain_word_model_names_need_the_make() -> None:
+    t = Target(make_id=1, make="Ford", make_aliases=[], model_id=1, model="Focus",
+               model_aliases=[], year_start=1998, year_end=None,
+               sibling_models=["Focus", "Fiesta"])
+    assert infer_label("2015 Ford Focus interior", t) is not None
+    assert infer_label("Ford Fiesta interior, shallow focus", t) is None
+    assert infer_label("refocused dashboard photo", t) is None
+    assert infer_label("Interior of a Focus ST (Ford), 2016", t) is not None
+    assert infer_label("Interior of a Focus ST, 2016", t) is None  # make never named
+    fiesta = Target(make_id=1, make="Ford", make_aliases=[], model_id=2, model="Fiesta",
+                    model_aliases=[], year_start=1995, year_end=None,
+                    sibling_models=["Focus", "Fiesta"])
+    clean = infer_label("2012 Ford Fiesta interior, shallow focus", fiesta)
+    assert clean is not None and "also mentions" not in clean.reason
+    # Code-like names stand alone and tolerate punctuation.
+    crv = Target(make_id=1, make="Honda", make_aliases=[], model_id=3, model="CR-V",
+                 model_aliases=[], year_start=1995, year_end=None)
+    assert infer_label("CRV dashboard 2018", crv) is not None
+    assert infer_label("CR V dashboard 2018", crv) is not None

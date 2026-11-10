@@ -174,3 +174,23 @@ def test_no_query_storage_when_retention_zero(populated: Engine) -> None:
     res = populated.identify(img, IdentifyOptions())
     with populated.db.session() as s:
         assert s.get(Identification, res["id"]).query_path is None  # type: ignore[union-attr]
+
+
+def test_restoring_rejected_image_does_not_duplicate_vectors(populated: Engine) -> None:
+    sizes = populated.index.sizes()
+    with populated.db.session() as s:
+        image_id = s.scalars(select(Image.id)).first()
+    assert image_id is not None
+    populated.set_review_status(image_id, ReviewStatus.rejected, "c")
+    populated.set_review_status(image_id, ReviewStatus.approved, "c")
+    whole = populated.index.get("whole")
+    assert whole is not None
+    _, iids, _ = whole.search(whole._vecs[0], 1000)
+    assert list(iids).count(image_id) == 1
+    assert populated.index.sizes() == sizes
+
+
+def test_index_warning_when_out_of_sync(populated: Engine) -> None:
+    assert populated.index_warnings() == []
+    populated.index.clear()
+    assert "Rebuild index" in populated.index_warnings()[0]

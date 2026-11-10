@@ -137,14 +137,15 @@ class Collector:
             if should_stop and should_stop():
                 break
             counters["candidates"] += 1
+            key = cand.url[:1000]  # SeenUrl primary key is limited to 1000 chars
             with self.engine.db.session() as s:
-                if s.get(SeenUrl, cand.url) is not None:
+                if s.get(SeenUrl, key) is not None:
                     counters["already_seen"] += 1
                     continue
             outcome, image_id = self._process(connector, target, cand, counters)
             if outcome != "fetch_error":
                 with self.engine.db.session() as s:
-                    s.merge(SeenUrl(url=cand.url[:1000], outcome=outcome, image_id=image_id))
+                    s.merge(SeenUrl(url=key, outcome=outcome, image_id=image_id))
             counters[outcome] += 1
             if outcome == "added":
                 added += 1

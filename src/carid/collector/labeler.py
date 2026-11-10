@@ -48,24 +48,44 @@ def _norm_words(text: str) -> str:
 
 
 def _phrase_in(text: str, phrase: str) -> bool:
-    """Phrase match tolerant to punctuation and spacing ("CR-V" ~ "CRV" ~ "CR V")."""
-    words = _norm_words(text)
-    joined = words.replace(" ", "")
+    """Whole-word phrase match tolerant to punctuation and spacing ("CR-V" ~ "CRV" ~ "CR V").
+
+    The phrase must equal a run of consecutive whole words: "Note" does not match
+    "footnote" and "A3" does not match "A35".
+    """
     p = normalize_name(phrase)
     if not p:
         return False
-    if len(p) <= 3:  # short names (e.g. "A3", "X5", "206") need word boundaries
-        return _contains(words, phrase)
-    return p in joined
+    words = re.split(r"[\s_/,;:()\[\]|\"'.\-]+", text)
+    norm = [w for w in (normalize_name(w) for w in words) if w]
+    for size in range(1, 7):
+        for i in range(len(norm) - size + 1):
+            if "".join(norm[i : i + size]) == p:
+                return True
+    return False
+
+
+def _mentions_model(text: str, make_names: list[str], model_name: str) -> bool:
+    """Code-like names (A3, CR-V, 3008, Model 3) may stand alone. Plain words
+    (Focus, Note, Leaf, Fit, Ranger) are ordinary words in captions, so they count
+    only right after the make ("Ford Focus"), or capitalised in a text that names
+    the make ("Focus ST (Ford)"), never as "shallow focus"."""
+    if any(ch.isdigit() for ch in model_name) or not model_name.replace(" ", "").isalpha():
+        return _phrase_in(text, model_name)
+    if any(_phrase_in(text, f"{mk} {model_name}") for mk in make_names):
+        return True
+    capitalised = re.search(rf"(?<![\w-]){re.escape(model_name)}(?![\w-])", text) is not None
+    return capitalised and any(_phrase_in(text, mk) for mk in make_names)
 
 
 def infer_label(text: str, target: Target, preset_year: int | None = None) -> LabelGuess | None:
     """Return a label guess, or None if the text does not clearly refer to the target model."""
     low = text.lower()
     model_names = [target.model, *target.model_aliases]
-    if not any(_phrase_in(text, n) for n in model_names):
+    make_names = [target.make, *target.make_aliases]
+    if not any(_mentions_model(text, make_names, n) for n in model_names):
         return None
-    make_named = any(_phrase_in(text, n) for n in [target.make, *target.make_aliases])
+    make_named = any(_phrase_in(text, n) for n in make_names)
 
     interior_hint: bool | None = None
     if any(w in low for w in INTERIOR_WORDS):
@@ -108,7 +128,7 @@ def infer_label(text: str, target: Target, preset_year: int | None = None) -> La
 
     conflicts = [m for m in target.sibling_models
                  if normalize_name(m) not in {normalize_name(n) for n in model_names}
-                 and len(normalize_name(m)) > 3 and _phrase_in(text, m)]
+                 and len(normalize_name(m)) > 3 and _mentions_model(text, make_names, m)]
 
     confidence = 0.55
     reasons = ["model named"]
