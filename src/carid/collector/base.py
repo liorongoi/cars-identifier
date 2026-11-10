@@ -76,6 +76,7 @@ class PoliteClient:
 
     def __init__(self, user_agent: str, timeout: float = 30.0, min_interval: float = 1.0,
                  max_retries: int = 5, max_bytes: int = 25 * 1024 * 1024,
+                 max_wait: float = 60.0,
                  transport: httpx.BaseTransport | None = None,
                  sleep: Any = time.sleep) -> None:
         self.client = httpx.Client(
@@ -88,6 +89,8 @@ class PoliteClient:
         self.max_bytes = max_bytes
         self._last: dict[str, float] = {}
         self.host_intervals: dict[str, float] = {}  # per-host minimum spacing (API limits)
+        self.max_wait = max_wait  # longer Retry-After => pause that host instead of sleeping
+        self._cooldown: dict[str, float] = {}
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._lock = threading.Lock()
         self._sleep = sleep
@@ -126,6 +129,9 @@ class PoliteClient:
         if check_robots and not self.allowed(url):
             raise FetchError(f"robots.txt disallows {url}")
         host = urlsplit(url).netloc
+        until = self._cooldown.get(host, 0.0)
+        if until > time.monotonic():
+            raise FetchError(f"{host} asked us to back off for {until - time.monotonic():.0f}s")
         delay = 2.0
         for attempt in range(self.max_retries + 1):
             self._throttle(host)
@@ -138,9 +144,16 @@ class PoliteClient:
                 delay = min(delay * 2, 120)
                 continue
             if r.status_code == 429 or r.status_code >= 500:
+                wait = _retry_after(r)
+                if wait > self.max_wait:
+                    # Don't block the whole job on one throttled host: skip it for now,
+                    # other hosts keep going; URLs are retried on the next run.
+                    self._cooldown[host] = time.monotonic() + wait
+                    raise FetchError(f"HTTP {r.status_code} for {url}: {host} asks to wait "
+                                     f"{wait:.0f}s; pausing that host")
                 if attempt == self.max_retries:
                     raise FetchError(f"HTTP {r.status_code} for {url} after retries")
-                self._sleep(max(delay, _retry_after(r)))
+                self._sleep(max(delay, wait))
                 delay = min(delay * 2, 120)
                 continue
             if r.status_code >= 400:

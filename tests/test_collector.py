@@ -338,3 +338,21 @@ def populated_web(engine: Engine) -> Engine:
                   label_for(engine, "Beta/City/2012"), SourceInfo("folder", source_url="file:///x"),
                   interior_score=0.9)
     return engine
+
+
+def test_polite_client_pauses_host_with_long_retry_after() -> None:
+    calls: dict[str, int] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls[request.url.host] = calls.get(request.url.host, 0) + 1
+        if request.url.host == "slow.test":
+            return httpx.Response(429, headers={"Retry-After": "600"})
+        return httpx.Response(200, content=b"ok")
+
+    client, sleeps = _client(handler)
+    with pytest.raises(FetchError, match="pausing that host"):
+        client.get("https://slow.test/a.jpg", check_robots=False)
+    with pytest.raises(FetchError, match="back off"):
+        client.get("https://slow.test/b.jpg", check_robots=False)
+    assert calls["slow.test"] == 1 and 600.0 not in sleeps  # no long sleep, no 2nd request
+    assert client.get("https://fast.test/c.jpg", check_robots=False).content == b"ok"
