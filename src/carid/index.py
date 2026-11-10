@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from carid.adapter import Adapter
+
 IntArray = NDArray[np.int64]
 FloatArray = NDArray[np.float32]
 
@@ -33,6 +35,32 @@ class VectorIndex:
         self._pending: list[tuple[IntArray, IntArray, FloatArray]] = []
         self._removed: set[int] = set()
         self._faiss: Any = None
+        self._adapter: Adapter | None = None
+        # adapted copies of _vecs, keyed by id(adapter); rebuilt lazily after changes
+        self._spaces: dict[int, tuple[Adapter, FloatArray]] = {}
+
+    def _invalidate(self) -> None:
+        self._faiss = None
+        self._spaces.clear()
+
+    def set_adapter(self, adapter: Adapter | None) -> None:
+        """Default search space (raw vectors are kept, so this is reversible)."""
+        self._adapter = adapter
+        self._invalidate()
+
+    def _space(self, adapter: Adapter | None) -> FloatArray:
+        if adapter is None:
+            return self._vecs
+        hit = self._spaces.get(id(adapter))
+        if hit is None or hit[0] is not adapter:
+            hit = (adapter, adapter.transform(self._vecs))
+            self._spaces[id(adapter)] = hit
+        return hit[1]
+
+    def raw_vectors(self) -> tuple[IntArray, IntArray, FloatArray]:
+        """(part_ids, image_ids, raw vectors) of all live entries — used to fit adapters."""
+        self.compact()
+        return self._part_ids, self._image_ids, self._vecs
 
     def __len__(self) -> int:
         self._consolidate()
@@ -59,7 +87,7 @@ class VectorIndex:
             keep = ~np.isin(self._image_ids, np.fromiter(image_ids, np.int64))
             self._part_ids, self._image_ids = self._part_ids[keep], self._image_ids[keep]
             self._vecs = self._vecs[keep]
-            self._faiss = None
+            self._invalidate()
         self._removed.difference_update(image_ids)
 
     def compact(self) -> None:
@@ -69,7 +97,7 @@ class VectorIndex:
             self._part_ids, self._image_ids = self._part_ids[keep], self._image_ids[keep]
             self._vecs = self._vecs[keep]
             self._removed.clear()
-            self._faiss = None
+            self._invalidate()
 
     def _consolidate(self) -> None:
         if not self._pending:
@@ -78,25 +106,35 @@ class VectorIndex:
         self._image_ids = np.concatenate([self._image_ids, *(p[1] for p in self._pending)])
         self._vecs = np.concatenate([self._vecs, *(p[2] for p in self._pending)])
         self._pending.clear()
-        self._faiss = None
+        self._invalidate()
 
-    def search(self, query: FloatArray, k: int) -> tuple[IntArray, IntArray, FloatArray]:
-        """Return (part_ids, image_ids, similarities) of the k nearest vectors, best first."""
+    def search(self, query: FloatArray, k: int, adapter: Adapter | str | None = "default",
+               ) -> tuple[IntArray, IntArray, FloatArray]:
+        """Return (part_ids, image_ids, similarities) of the k nearest vectors, best first.
+
+        ``adapter``: "default" uses the index's adapter; None searches raw vectors;
+        an Adapter instance overrides (used by the benchmark).
+        """
+        use = self._adapter if adapter == "default" else adapter
+        assert use is None or isinstance(use, Adapter)
         self._consolidate()
         n = self._part_ids.size
         empty = (np.zeros(0, np.int64), np.zeros(0, np.int64), np.zeros(0, np.float32))
         if n == 0 or k <= 0:
             return empty
         q = np.asarray(query, dtype=np.float32).reshape(-1)
+        if use is not None:
+            q = use.transform(q[None, :])[0]
+        space = self._space(use)
         fetch = min(n, k + len(self._removed))
-        if HAVE_FAISS and n > 20_000:
+        if HAVE_FAISS and n > 20_000 and use is self._adapter:
             if self._faiss is None:
-                self._faiss = faiss.IndexFlatIP(self.dim)
-                self._faiss.add(self._vecs)
+                self._faiss = faiss.IndexFlatIP(space.shape[1])
+                self._faiss.add(space)
             sims, idx = self._faiss.search(q[None, :], fetch)
             order, sims_sel = idx[0], sims[0].astype(np.float32)
         else:
-            sims_all = self._vecs @ q
+            sims_all = space @ q
             if fetch < n:
                 part = np.argpartition(-sims_all, fetch - 1)[:fetch]
                 order = part[np.argsort(-sims_all[part], kind="stable")]
@@ -134,8 +172,15 @@ class IndexSet:
         self.dim = dim
         self.embedder_name = embedder_name
         self.parts: dict[str, VectorIndex] = {}
+        self.adapters: dict[str, Adapter] = {}
         self.lock = threading.RLock()
         self._dirty = False
+
+    def set_adapters(self, adapters: dict[str, Adapter]) -> None:
+        with self.lock:
+            self.adapters = dict(adapters)
+            for part, idx in self.parts.items():
+                idx.set_adapter(self.adapters.get(part))
 
     def get(self, part: str) -> VectorIndex | None:
         return self.parts.get(part)
@@ -144,6 +189,7 @@ class IndexSet:
         with self.lock:
             if part not in self.parts:
                 self.parts[part] = VectorIndex(self.dim)
+                self.parts[part].set_adapter(self.adapters.get(part))
             self.parts[part].add(part_ids, image_ids, vecs)
             self._dirty = True
 
@@ -176,7 +222,7 @@ class IndexSet:
             for part, idx in self.parts.items():
                 idx.save(self.dir / f"{part}.npz")
             for stale in self.dir.glob("*.npz"):
-                if stale.stem not in self.parts:
+                if stale.stem not in self.parts and not stale.name.startswith("_"):
                     stale.unlink()
             meta = {"embedder": self.embedder_name, "dim": self.dim}
             (self.dir / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
@@ -195,6 +241,11 @@ class IndexSet:
                     "rebuild the index"
                 )
             for f in sorted(self.dir.glob("*.npz")):
-                if f.name.endswith(".tmp.npz"):
-                    continue
+                if f.name.endswith(".tmp.npz") or f.name.startswith("_"):
+                    continue  # "_*" files are not part indexes (e.g. adapters)
                 self.parts[f.stem] = VectorIndex.load(f)
+                self.parts[f.stem].set_adapter(self.adapters.get(f.stem))
+
+    @property
+    def adapters_path(self) -> Path:
+        return self.dir / "_adapters.npz"

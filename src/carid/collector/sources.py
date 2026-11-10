@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
-from carid.collector.base import Candidate, FetchError, SourceConnector, Target
+from carid.collector.base import Candidate, FetchError, SourceConnector, SourceExhausted, Target
 from carid.collector.labeler import _phrase_in
 
 log = logging.getLogger(__name__)
@@ -389,3 +389,151 @@ CONNECTOR_CLASSES: dict[str, type[SourceConnector]] = {
     c.name: c for c in (WikimediaCommonsSource, WebPagesSource, FolderSource, FlickrSource,
                         VideoFramesSource)
 }
+
+
+# --------------------------------------------------------------------------- Openverse
+
+
+class OpenverseSource(SourceConnector):
+    """Openverse (openverse.org): openly licensed images from Wikimedia, Flickr and others,
+    searched through its official API. Every result carries its licence and creator.
+
+    Anonymous use allows 200 searches/day and 20/minute; set ``client_id_env`` /
+    ``client_secret_env`` to a registered (free) application for higher limits.
+    ``exclude_providers`` (e.g. ``[flickr]``) drops results originating from a provider.
+    """
+
+    name = "openverse"
+    description = "Openverse open-licence image catalogue (official API, CC licences)"
+    API = "https://api.openverse.org/v1/images/"
+    TOKEN_URL = "https://api.openverse.org/v1/auth_tokens/token/"  # noqa: S105 - a URL
+
+    def __init__(self, config: dict[str, Any], http: Any) -> None:
+        super().__init__(config, http)
+        self._token: str | None = None
+        self._exhausted_after_this = False
+        if http is not None:
+            # Burst limit is 20/min for anonymous use: keep ~3.2 s between API calls.
+            http.host_intervals.setdefault("api.openverse.org",
+                                           float(config.get("min_interval_s", 3.2)))
+
+    def _auth_headers(self) -> dict[str, str]:
+        cid = os.environ.get(str(self.config.get("client_id_env", "OPENVERSE_CLIENT_ID")), "")
+        secret = os.environ.get(
+            str(self.config.get("client_secret_env", "OPENVERSE_CLIENT_SECRET")), "")
+        if not (cid and secret):
+            return {}
+        if self._token is None:
+            r = self.http.client.post(self.TOKEN_URL, data={
+                "grant_type": "client_credentials", "client_id": cid, "client_secret": secret})
+            r.raise_for_status()
+            self._token = str(r.json()["access_token"])
+        return {"Authorization": f"Bearer {self._token}"}
+
+    def _query(self, params: dict[str, Any]) -> dict[str, Any]:
+        try:
+            r = self.http.get(self.API, params=params, check_robots=False,
+                              headers=self._auth_headers())
+        except FetchError as exc:
+            if "429" in str(exc):
+                raise SourceExhausted("Openverse rate limit reached") from exc
+            raise
+        for key, value in r.headers.items():
+            if key.lower().startswith("x-ratelimit-available") and "sustained" in key.lower() \
+                    and value.strip() == "0":
+                # This response is still valid; the next call would be refused.
+                self._exhausted_after_this = True
+        data: dict[str, Any] = r.json()
+        return data
+
+    def search(self, target: Target, limit: int) -> Iterator[Candidate]:
+        self._exhausted_after_this = False
+        excluded = {str(p).lower() for p in self.config.get("exclude_providers", [])}
+        page_size = int(self.config.get("page_size", 20))
+        max_queries = int(self.config.get("max_queries_per_model", 2))
+        max_pages = int(self.config.get("max_pages", 1))
+        seen: set[str] = set()
+        for query in search_queries(target)[:max_queries]:
+            for page in range(1, max_pages + 1):
+                if self._exhausted_after_this:
+                    raise SourceExhausted("Openverse daily quota used up")
+                params: dict[str, Any] = {"q": query, "page_size": page_size, "page": page,
+                                          "mature": "false"}
+                if self.config.get("license_type"):
+                    params["license_type"] = self.config["license_type"]
+                data = self._query(params)
+                results = data.get("results", [])
+                for r in results:
+                    url = r.get("url")
+                    if not url or url in seen:
+                        continue
+                    if str(r.get("provider", "")).lower() in excluded \
+                            or str(r.get("source", "")).lower() in excluded:
+                        continue
+                    seen.add(url)
+                    lic = str(r.get("license", "")).upper()
+                    licence = (lic if lic in ("CC0", "PDM")
+                               else f"CC {lic} {r.get('license_version') or ''}".strip())
+                    yield Candidate(
+                        url=url,
+                        page_url=r.get("foreign_landing_url"),
+                        title=str(r.get("title") or ""),
+                        extra_text=" ".join(t.get("name", "") for t in r.get("tags") or []),
+                        license=licence,
+                        credit=f"{r.get('creator') or 'unknown'} via {r.get('source')}"[:400],
+                    )
+                    if len(seen) >= limit:
+                        return
+                if page >= int(data.get("page_count", 1)):
+                    break
+
+
+# --------------------------------------------------------------------------- manifest
+
+
+MANIFEST_FIELDS = ["url", "make", "model", "year_start", "year_end", "license", "credit",
+                   "page_url", "title", "source"]
+
+
+class ManifestSource(SourceConnector):
+    """Download images listed in CSV manifests (``url, make, model, year_start, ...``).
+
+    Manifests hold links, labels and licences only, so a collection made on one machine
+    (``carid export-manifest``) can be reproduced on another without searching again.
+    """
+
+    name = "manifest"
+    description = "CSV manifests of image links + labels (reproduce another host's collection)"
+
+    def _rows(self) -> Iterator[dict[str, str]]:
+        import csv
+        import glob
+
+        for pattern in self.config.get("paths", ["data/manifests/*.csv"]):
+            for name in sorted(glob.glob(str(pattern))):  # noqa: PTH207 - abs or rel patterns
+                with Path(name).open(encoding="utf-8", newline="") as f:
+                    yield from csv.DictReader(f)
+
+    def search(self, target: Target, limit: int) -> Iterator[Candidate]:
+        count = 0
+        names = [target.model, *target.model_aliases]
+        for row in self._rows():
+            if not (_phrase_in(row.get("make", ""), target.make)
+                    and any(_phrase_in(row.get("model", ""), n) for n in names)):
+                continue
+            year = row.get("year_start") or ""
+            yield Candidate(
+                url=row["url"], page_url=row.get("page_url") or None,
+                title=row.get("title") or "",
+                # Labels in a manifest are authoritative: state them explicitly for the labeler.
+                extra_text=f"{target.make} {target.model} interior {year}",
+                license=row.get("license") or None, credit=row.get("credit") or None,
+                preset_year=int(year) if year.isdigit() else None,
+            )
+            count += 1
+            if count >= limit:
+                return
+
+
+CONNECTOR_CLASSES[OpenverseSource.name] = OpenverseSource
+CONNECTOR_CLASSES[ManifestSource.name] = ManifestSource

@@ -12,7 +12,8 @@ blur and poor light; shows its evidence.
 ## What it does
 
 1. **Collects** interior images per `Make › Model › Year` from Wikimedia Commons,
-   brochure/press pages you list, and a local import folder (images + brochure PDFs).
+   Openverse (open-licence catalogue, official API), brochure/press pages you list,
+   a local import folder (images + brochure PDFs), and CSV manifests of links.
    Social-network (Flickr API) and movie-frame connectors exist but stay **off**
    until legal approval is recorded in `config/sources.yaml`.
 2. **Cleans** them: de-duplication, interior check, faces blurred, label confidence.
@@ -46,7 +47,7 @@ Without them the system runs on a lightweight built-in descriptor and says so in
 |---|---|---|
 | Online host | Collect images | `carid collect` (all makes) or `carid collect --make Toyota --model Corolla`, or **Database › Collect** |
 | Online host | Add a missing make | **Add make / model** screen, or `carid add-make Chery` |
-| Online host | Export | `carid export-bundle bundle.tar.gz` |
+| Online host | Export | `carid export-bundle bundle.tar.gz` (images) or `carid export-manifest data/manifests/x.csv` (links + labels only) |
 | Offline server | Import | `carid import-bundle bundle.tar.gz` |
 | Offline server | Measure accuracy | `carid benchmark` or **Jobs › Run benchmark** |
 | Analyst | Identify | **Identify** screen (drag-drop, paste, or file picker) |

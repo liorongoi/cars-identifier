@@ -114,3 +114,27 @@ def import_bundle(engine: Engine, src: Path,
                 progress(n / len(records), f"imported {n}/{len(records)}")
     engine.save_index()
     return counts
+
+
+def export_manifest(engine: Engine, dest: Path) -> int:
+    """Write links + labels + licences of collected web images (no image files) as CSV."""
+    import csv
+
+    from carid.collector.sources import MANIFEST_FIELDS
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with engine.db.session() as s, dest.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=MANIFEST_FIELDS)
+        w.writeheader()
+        stmt = (select(Image).where(Image.review_status != ReviewStatus.rejected,
+                                    Image.source_url.like("http%"))
+                .order_by(Image.make_id, Image.model_id, Image.year_start))
+        for im in s.scalars(stmt):
+            w.writerow({"url": im.source_url, "make": im.make.name, "model": im.model.name,
+                        "year_start": im.year_start or "", "year_end": im.year_end or "",
+                        "license": im.license or "", "credit": im.credit or "",
+                        "page_url": im.page_url or "", "title": im.title or "",
+                        "source": im.source})
+            n += 1
+    return n

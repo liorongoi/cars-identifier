@@ -12,7 +12,14 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from carid.collector.base import FetchError, GenerationRef, PoliteClient, SourceConnector, Target
+from carid.collector.base import (
+    FetchError,
+    GenerationRef,
+    PoliteClient,
+    SourceConnector,
+    SourceExhausted,
+    Target,
+)
 from carid.collector.labeler import infer_label
 from carid.collector.sources import CONNECTOR_CLASSES
 from carid.config import Settings
@@ -99,6 +106,7 @@ class Collector:
             say("no runnable sources")
             return dict(counters)
         added_since_save = 0
+        exhausted: set[str] = set()
         for t_no, target in enumerate(targets):
             if should_stop and should_stop():
                 say("cancelled")
@@ -107,12 +115,19 @@ class Collector:
             for connector in active:
                 if should_stop and should_stop():
                     break
+                if connector.name in exhausted:
+                    continue
                 remaining = per_model_limit - added_for_target
                 if remaining <= 0:
                     break
                 try:
                     added = self._collect_one(connector, target, remaining * 4, remaining,
                                               counters, say, should_stop)
+                except SourceExhausted as exc:
+                    exhausted.add(connector.name)
+                    counters["sources_exhausted"] += 1
+                    say(f"{connector.name}: {exc}; skipping it for the rest of this job")
+                    added = 0
                 except Exception as exc:  # one broken source must not stop the job
                     counters["source_errors"] += 1
                     say(f"{connector.name} failed for {target.display}: {exc}")

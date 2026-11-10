@@ -236,3 +236,105 @@ def test_folder_source_imports_layout(engine: Engine, tmp_path: Path) -> None:
         gens = sorted(im.generation.name for im in s.scalars(select(Image))
                       if im.generation is not None)
     assert gens == ["R1", "R2"]
+
+
+def _ov_result(i: int, title: str, provider: str = "flickr") -> dict[str, Any]:
+    return {"url": f"https://img.test/{i}.jpg", "title": title, "license": "by-sa",
+            "license_version": "2.0", "creator": "Ann", "source": provider,
+            "provider": provider, "foreign_landing_url": f"https://p.test/{i}",
+            "tags": [{"name": "dashboard"}]}
+
+
+def test_openverse_source_parses_and_filters(engine: Engine) -> None:
+    from carid.collector.sources import OpenverseSource
+
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"page_count": 1, "results": [
+            _ov_result(1, "2012 Alpha Roadster interior"),
+            _ov_result(2, "Alpha Roadster cockpit", provider="museum"),
+            _ov_result(1, "duplicate url"),
+        ]})
+
+    client, _ = _client(handler)
+    src = OpenverseSource({"enabled": True, "exclude_providers": ["museum"],
+                           "max_queries_per_model": 1}, client)
+    assert client.host_intervals["api.openverse.org"] > 3
+    cands = list(src.search(_target(engine), 10))
+    assert [c.url for c in cands] == ["https://img.test/1.jpg"]
+    c = cands[0]
+    assert c.license == "CC BY-SA 2.0" and c.credit == "Ann via flickr"
+    assert "dashboard" in c.extra_text and c.page_url == "https://p.test/1"
+    assert calls[0].url.params["mature"] == "false"
+    assert len(calls) == 1
+
+
+def test_openverse_quota_stops_source_for_the_job(engine: Engine) -> None:
+    from carid.collector.sources import OpenverseSource
+
+    n = {"calls": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        n["calls"] += 1
+        return httpx.Response(429, headers={"Retry-After": "1"})
+
+    client, _ = _client(handler)
+    src = OpenverseSource({"enabled": True}, client)
+    logs: list[str] = []
+    with engine.db.session() as s:
+        targets = build_targets(s)
+    counters = Collector(engine, {"openverse": src}).run(targets, log_fn=logs.append)
+    assert counters["sources_exhausted"] == 1
+    assert n["calls"] == 4  # one request + 3 retries, then no more targets tried
+    assert any("skipping it for the rest" in line for line in logs)
+
+
+def test_openverse_sustained_header_raises_before_next_call(engine: Engine) -> None:
+    from carid.collector.base import SourceExhausted
+    from carid.collector.sources import OpenverseSource
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"x-ratelimit-available-anon_sustained": "0"},
+                              json={"page_count": 1, "results": [_ov_result(1, "Alpha Roadster")]})
+
+    client, _ = _client(handler)
+    src = OpenverseSource({"enabled": True, "max_queries_per_model": 3}, client)
+    gen = src.search(_target(engine), 50)
+    assert next(gen).url == "https://img.test/1.jpg"
+    with pytest.raises(SourceExhausted):
+        next(gen)
+
+
+def test_manifest_roundtrip(populated_web: Engine, tmp_path: Path) -> None:
+    from carid.bundle import export_manifest
+    from carid.collector.sources import ManifestSource
+
+    dest = tmp_path / "m" / "pilot.csv"
+    assert export_manifest(populated_web, dest) == 2
+    client, _ = _client(lambda r: httpx.Response(500))
+    src = ManifestSource({"enabled": True, "paths": [str(tmp_path / "m" / "*.csv")]}, client)
+    cands = list(src.search(_target(populated_web), 10))
+    assert len(cands) == 2 and {c.preset_year for c in cands} == {2010}
+    assert all(c.license == "CC BY 4.0" for c in cands)
+    guess_text = cands[0].text
+    assert "Alpha Roadster interior" in guess_text
+    assert list(src.search(_target(populated_web, "Beta", "City"), 10)) == []
+
+
+@pytest.fixture
+def populated_web(engine: Engine) -> Engine:
+    rng = np.random.default_rng(12)
+    from carid.engine import SourceInfo
+    from tests.conftest import label_for
+
+    for i in range(2):
+        engine.ingest(to_jpeg(draw_interior(CLASS_STYLES["Alpha/Roadster/2010"], rng)),
+                      label_for(engine, "Alpha/Roadster/2010"),
+                      SourceInfo("openverse", source_url=f"https://img.test/{i}.jpg",
+                                 license="CC BY 4.0"), interior_score=0.9)
+    engine.ingest(to_jpeg(draw_interior(CLASS_STYLES["Beta/City/2012"], rng)),
+                  label_for(engine, "Beta/City/2012"), SourceInfo("folder", source_url="file:///x"),
+                  interior_score=0.9)
+    return engine

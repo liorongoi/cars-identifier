@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 import random
 import time
@@ -12,6 +13,7 @@ from typing import Any
 
 import numpy as np
 
+from carid.adapter import Adapter
 from carid.engine import Engine
 from carid.matcher import ClassScore, Label, MatchParams, Mode, rank
 from carid.models import Benchmark
@@ -69,7 +71,8 @@ def _metrics(ranks: list[int | None]) -> dict[str, float]:
 
 def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int = 200,
                   degradations: list[str] | None = None, modes: list[Mode] | None = None,
-                  seed: int = 0, progress: Callable[[float, str], None] | None = None,
+                  seed: int = 0, compare_adapter: bool = True,
+                  progress: Callable[[float, str], None] | None = None,
                   should_stop: Callable[[], bool] | None = None,
                   job_id: int | None = None) -> dict[str, Any]:
     labels = engine.labels()
@@ -87,9 +90,17 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
         softmax_temperature=engine.settings.softmax_temperature,
         part_weights=engine.settings.part_weights,
     )
-    # ranks[condition][mode][level] -> list of ranks
+    # Variants: raw vectors, and (if enough data) an LDA adapter fitted on the
+    # training split only, so test images never influence the adapter.
+    variants: dict[str, dict[str, Adapter]] = {"": {}}
+    if compare_adapter:
+        fitted = engine.fit_adapters(exclude_image_ids=set(test_ids))
+        if fitted:
+            variants["+lda"] = fitted
+    keys = [f"{m}{v}" for m in modes for v in variants]
+    # ranks[condition][mode key][level] -> list of ranks
     ranks: dict[str, dict[str, dict[str, list[int | None]]]] = {
-        c: {m: defaultdict(list) for m in modes} for c in conditions}
+        c: {k: defaultdict(list) for k in keys} for c in conditions}
     latency: list[float] = []
     rng = np.random.default_rng(seed)
     total = max(len(test_ids) * len(conditions), 1)
@@ -113,11 +124,11 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
             q = img if cond == "clean" else DEGRADATIONS[cond](img, rng)
             t0 = time.perf_counter()
             analysis = engine.analyze(q)
-            for mode in modes:
-                params = replace(base, mode=mode)
+            for mode, (suffix, adapters) in itertools.product(modes, variants.items()):
+                params = replace(base, mode=mode, adapters=adapters)
                 with engine.index.lock:
                     ranked = rank(analysis.vectors, engine.index, train_labels, params)
-                r = ranks[cond][mode]
+                r = ranks[cond][f"{mode}{suffix}"]
                 r["make"].append(_make_rank(ranked, truth.make_id))
                 r["model"].append(_rank_of(ranked, _model_pred(truth)))
                 r["model_year"].append(_rank_of(ranked, _year_pred(truth)))
@@ -131,10 +142,10 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
         for cond, by_mode in ranks.items()
     }
     summary: dict[str, dict[str, float]] = {}
-    for mode in modes:
-        vals = [results[c][mode]["model"].get("top5", 0.0) for c in conditions
-                if results[c][mode].get("model")]
-        summary[mode] = {"mean_model_top5": round(float(np.mean(vals)) if vals else 0.0, 4)}
+    for key in keys:
+        vals = [results[c][key]["model"].get("top5", 0.0) for c in conditions
+                if results[c][key].get("model")]
+        summary[key] = {"mean_model_top5": round(float(np.mean(vals)) if vals else 0.0, 4)}
     best = max(summary, key=lambda m: summary[m]["mean_model_top5"]) if summary else None
     report: dict[str, Any] = {
         "embedder": engine.embedder.name,
@@ -143,7 +154,7 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
         "test_images": len(test_ids),
         "classes": len({(lab.model_id, lab.generation_id) for lab in labels.values()}),
         "conditions": conditions,
-        "modes": modes,
+        "modes": keys,
         "results": results,
         "summary": summary,
         "best_mode": best,

@@ -71,6 +71,8 @@ class Settings(BaseSettings):
 
     # Matching
     matcher_mode: Literal["fusion", "global", "parts"] = "fusion"
+    use_adapter: bool = True  # apply the learned LDA adapter when one has been trained
+    adapter_shrinkage: float = Field(0.5, ge=0.0, le=1.0)
     top_k: int = Field(10, ge=1, le=50)
     neighbors_per_part: int = Field(50, ge=5, le=500)
     votes_per_class: int = Field(3, ge=1, le=20)

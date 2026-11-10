@@ -15,6 +15,7 @@ from typing import Literal
 
 import numpy as np
 
+from carid.adapter import Adapter
 from carid.index import IndexSet
 from carid.vision.embed import Vectors
 
@@ -63,6 +64,8 @@ class MatchParams:
     make_ids: set[int] | None = None
     year_min: int | None = None
     year_max: int | None = None
+    # None: use the index's own adapters; a dict overrides them ({} = raw vectors).
+    adapters: dict[str, Adapter] | None = None
 
 
 def parts_for_mode(mode: Mode, available: list[str]) -> list[str]:
@@ -101,7 +104,9 @@ def rank(
         weight = params.part_weights.get(part, 1.0)
         if weight <= 0:
             continue
-        part_ids, image_ids, sims = idx.search(query[part], params.neighbors_per_part)
+        override: Adapter | str | None = (
+            "default" if params.adapters is None else params.adapters.get(part))
+        part_ids, image_ids, sims = idx.search(query[part], params.neighbors_per_part, override)
         hits_by_class: dict[ClassKey, list[tuple[float, int, int, Label]]] = defaultdict(list)
         for pid, iid, sim in zip(part_ids.tolist(), image_ids.tolist(), sims.tolist(),
                                  strict=True):

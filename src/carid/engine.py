@@ -14,6 +14,7 @@ import numpy as np
 from sqlalchemy import delete, func, select, true, update
 from sqlalchemy.orm import Session
 
+from carid.adapter import Adapter, fit_lda, load_adapters, save_adapters
 from carid.config import Settings
 from carid.db import Database
 from carid.index import IndexSet
@@ -118,6 +119,8 @@ class Engine:
             settings.detector, settings.owl_model, cache, settings.allow_model_download)
         self.faces = FaceDetector(settings.models_cache)
         self.index = IndexSet(settings.index_dir, self.embedder.name, self.embedder.dim)
+        if settings.use_adapter:
+            self.index.adapters = load_adapters(self.index.adapters_path)
         self.index.load()
         self._ingest_lock = threading.Lock()
         self._labels: dict[int, Label] = {}
@@ -139,6 +142,7 @@ class Engine:
             "deep_models": not self.embedder.name.startswith("handcrafted"),
             "index_sizes": self.index.sizes(),
             "matcher_mode": self.settings.matcher_mode,
+            "adapter": sorted(self.index.adapters),
         }
 
     def index_warnings(self) -> list[str]:
@@ -463,6 +467,36 @@ class Engine:
             self.index.add(p.part, np.array([row.id]), np.array([image.id]),
                            vectors[p.part][None, :])
         image.indexed = True
+
+    def fit_adapters(self, exclude_image_ids: set[int] | None = None) -> dict[str, Adapter]:
+        """Fit one LDA adapter per part on the labelled reference vectors."""
+        labels = self.labels()
+        exclude = exclude_image_ids or set()
+        out: dict[str, Adapter] = {}
+        with self.index.lock:
+            parts = dict(self.index.parts)
+        for part, idx in parts.items():
+            _, image_ids, vecs = idx.raw_vectors()
+            rows = [i for i, iid in enumerate(image_ids.tolist())
+                    if iid in labels and iid not in exclude]
+            if len(rows) < 4:
+                continue
+            classes: list[object] = [
+                (labels[int(image_ids[i])].model_id, labels[int(image_ids[i])].generation_id)
+                for i in rows]
+            adapter = fit_lda(vecs[rows], classes, shrinkage=self.settings.adapter_shrinkage)
+            if adapter is not None:
+                out[part] = adapter
+        return out
+
+    def train_adapters(self) -> dict[str, Any]:
+        """Fit adapters on all references, save them and use them for searching."""
+        adapters = self.fit_adapters()
+        self.index.dir.mkdir(parents=True, exist_ok=True)
+        save_adapters(self.index.adapters_path, adapters)
+        if self.settings.use_adapter:
+            self.index.set_adapters(adapters)
+        return {"parts": sorted(adapters), "images": len(self.labels())}
 
     def save_index(self) -> None:
         self.index.save()

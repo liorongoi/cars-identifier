@@ -83,6 +83,7 @@ export interface EngineInfo {
   deep_models: boolean;
   index_sizes: Record<string, number>;
   matcher_mode: string;
+  adapter: string[];
 }
 
 export interface Health {

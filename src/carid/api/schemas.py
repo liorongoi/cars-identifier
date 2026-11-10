@@ -48,7 +48,8 @@ class AddModelIn(ModelIn):
 
 
 class JobIn(BaseModel):
-    kind: Literal["collect", "reindex", "benchmark", "expand_make", "import_bundle"]
+    kind: Literal["collect", "reindex", "benchmark", "expand_make", "import_bundle",
+                  "train_adapter"]
     params: dict[str, Any] = Field(default_factory=dict)
     requested_by: str | None = Field(default=None, max_length=80)
 

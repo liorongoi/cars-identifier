@@ -6,6 +6,24 @@ wikimedia:
   enabled: true
   thumb_width: 1600
 
+openverse:
+  # Open-licence catalogue (Wikimedia, Flickr CC, museums...) via its official API.
+  # Most results originate from Flickr under Creative Commons licences; add
+  # `exclude_providers: [flickr]` to keep only non-social-network origins.
+  enabled: true
+  page_size: 20              # anonymous maximum
+  max_queries_per_model: 2   # anonymous quota is 200 searches/day
+  max_pages: 1
+  exclude_providers: []
+  # Register a free app at https://api.openverse.org/v1/#tag/auth for higher limits:
+  client_id_env: OPENVERSE_CLIENT_ID
+  client_secret_env: OPENVERSE_CLIENT_SECRET
+
+manifest:
+  # Re-download a collection made elsewhere: CSV files from `carid export-manifest`.
+  enabled: true
+  paths: ["data/manifests/*.csv"]
+
 brochure_sites:
   enabled: true
   # List pages you are allowed to collect from (manufacturer press/media sites,

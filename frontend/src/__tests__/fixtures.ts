@@ -27,6 +27,6 @@ export const RESULT: IdentifyResult = {
   warnings: ["Poor image quality (low light); results are less reliable."],
   duration_ms: 812,
   engine: { embedder: "handcrafted-v1", embedder_dim: 512, detector: "layout", face_detector: "haar", deep_models: false,
-    index_sizes: { whole: 100 }, matcher_mode: "fusion" },
+    index_sizes: { whole: 100 }, matcher_mode: "fusion", adapter: [] },
   created_at: "2026-11-10T10:00:00Z",
 };

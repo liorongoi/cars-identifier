@@ -25,7 +25,12 @@ reviewed system — never a half-built one.
   Add make, History, Benchmarks, System.
 - Evaluation harness with degradation suite.
 
-## Phase 2 — Data at scale (owner's collection host, online)
+## Phase 2 — Data at scale (owner's collection host, online) — in progress
+- ✅ Openverse connector with daily-quota handling; manifest export/import.
+- ✅ First pilot collection run from the development sandbox (Wikimedia API is
+  rate-limited there); its manifest is in `data/manifests/` so the owner's host can
+  re-download the same images.
+
 1. Owner confirms the pilot make list and brochure sites (SRS §8).
 2. `carid fetch-models` to cache weights; `carid collect --make <all pilot>`.
 3. Curator review pass of low-confidence labels in the Database screen.

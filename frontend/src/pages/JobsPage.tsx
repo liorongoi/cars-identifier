@@ -8,6 +8,7 @@ const KIND_LABEL: Record<string, string> = {
   benchmark: "Benchmark",
   expand_make: "Expand make (Wikidata)",
   import_bundle: "Import bundle",
+  train_adapter: "Train adapter",
 };
 
 function describe(j: Job): string {
@@ -66,6 +67,13 @@ export function JobsPage() {
           </button>
           <button className="btn" onClick={() => void start("reindex", {}, "Re-embed every reference image? Needed after changing the embedder.")}>
             Rebuild index
+          </button>
+          <button
+            className="btn"
+            title="Learn which interior features separate car generations (seconds; re-run after large collections)"
+            onClick={() => void start("train_adapter", {})}
+          >
+            Train adapter
           </button>
           <button className="btn primary" onClick={() => void start("benchmark", { max_test: 200 })}>
             Run benchmark

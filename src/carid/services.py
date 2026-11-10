@@ -29,6 +29,7 @@ class Services:
         self.jobs.register("collect", self._job_collect)
         self.jobs.register("reindex", self._job_reindex)
         self.jobs.register("benchmark", self._job_benchmark)
+        self.jobs.register("train_adapter", self._job_train_adapter)
         self.jobs.register("expand_make", self._job_expand_make)
         self.jobs.register("import_bundle", self._job_import_bundle)
 
@@ -64,6 +65,11 @@ class Services:
         n = self.engine.rebuild_index(progress=ctx.progress, should_stop=ctx.should_stop)
         ctx.log(f"re-indexed {n} images with {self.engine.embedder.name}")
         return {"indexed": n}
+
+    def _job_train_adapter(self, ctx: JobContext) -> dict[str, Any]:
+        result = self.engine.train_adapters()
+        ctx.log(f"adapter trained for parts {result['parts']} on {result['images']} images")
+        return {"parts": len(result["parts"]), "images": result["images"]}
 
     def _job_benchmark(self, ctx: JobContext) -> dict[str, Any]:
         p = ctx.params

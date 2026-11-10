@@ -67,6 +67,10 @@ class FetchError(RuntimeError):
     pass
 
 
+class SourceExhausted(RuntimeError):
+    """The source's quota is used up for now; skip it for the rest of the job."""
+
+
 class PoliteClient:
     """HTTP client with per-host throttling, retry/back-off and robots.txt checks."""
 
@@ -83,6 +87,7 @@ class PoliteClient:
         self.max_retries = max_retries
         self.max_bytes = max_bytes
         self._last: dict[str, float] = {}
+        self.host_intervals: dict[str, float] = {}  # per-host minimum spacing (API limits)
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._lock = threading.Lock()
         self._sleep = sleep
@@ -92,7 +97,8 @@ class PoliteClient:
 
     def _throttle(self, host: str) -> None:
         with self._lock:
-            wait = self._last.get(host, 0.0) + self.min_interval - time.monotonic()
+            interval = self.host_intervals.get(host, self.min_interval)
+            wait = self._last.get(host, 0.0) + interval - time.monotonic()
             if wait > 0:
                 self._sleep(wait)
             self._last[host] = time.monotonic()

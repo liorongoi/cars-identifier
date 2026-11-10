@@ -42,6 +42,8 @@ export function SystemPage() {
                   <dd className="mono">{h.engine.face_detector}</dd>
                   <dt>Matching mode</dt>
                   <dd className="mono">{h.engine.matcher_mode}</dd>
+                  <dt>Learned adapter</dt>
+                  <dd className="mono">{h.engine.adapter.length ? h.engine.adapter.join(", ") : "not trained"}</dd>
                   <dt>Index</dt>
                   <dd className="mono small">
                     {Object.entries(h.engine.index_sizes)

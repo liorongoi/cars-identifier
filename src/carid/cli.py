@@ -129,6 +129,13 @@ def identify(image: Path, top_k: int = 10, mode: str | None = None) -> None:
         typer.echo(f"! {w}")
 
 
+@app.command("train-adapter")
+def train_adapter() -> None:
+    """Fit the LDA adapter on the labelled references and start using it."""
+    svc = _services()
+    typer.echo(svc.engine.train_adapters())
+
+
 @app.command()
 def benchmark(max_test: int = 200, test_fraction: float = 0.2, seed: int = 0,
               degradations: Annotated[str | None, typer.Option(
@@ -140,7 +147,8 @@ def benchmark(max_test: int = 200, test_fraction: float = 0.2, seed: int = 0,
     degs = None if degradations is None else (
         [] if degradations == "none" else degradations.split(","))
     report = run_benchmark(svc.engine, max_test=max_test, test_fraction=test_fraction,
-                           seed=seed, degradations=degs)
+                           seed=seed, degradations=degs,
+                           progress=lambda f, m: typer.echo(f"{f:6.1%} {m}", err=True))
     typer.echo(json.dumps({k: report[k] for k in (
         "embedder", "reference_images", "test_images", "classes", "summary", "best_mode",
         "mean_latency_ms")}, indent=2))
@@ -152,6 +160,14 @@ def export_bundle_cmd(dest: Path) -> None:
     from carid.bundle import export_bundle
 
     typer.echo(export_bundle(_services().engine, dest))
+
+
+@app.command("export-manifest")
+def export_manifest_cmd(dest: Path) -> None:
+    """Export links + labels + licences of collected web images as CSV (no image files)."""
+    from carid.bundle import export_manifest
+
+    typer.echo(f"{export_manifest(_services().engine, dest)} rows written to {dest}")
 
 
 @app.command("import-bundle")
