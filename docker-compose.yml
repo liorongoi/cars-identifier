@@ -1,0 +1,20 @@
+services:
+  carid:
+    build: .
+    image: carid-interior:latest
+    ports:
+      - "127.0.0.1:8000:8000"   # internal network only; put a reverse proxy in front for LAN access
+    environment:
+      # On the offline analysis server set this to "false" after `carid fetch-models`.
+      CARID_ALLOW_MODEL_DOWNLOAD: "true"
+      CARID_QUERY_RETENTION_DAYS: "30"
+    volumes:
+      - carid-data:/data
+      - carid-models:/models
+      - ./imports:/app/imports:ro
+      - ./config:/app/config:ro
+    restart: unless-stopped
+
+volumes:
+  carid-data:
+  carid-models:

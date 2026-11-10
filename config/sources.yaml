@@ -1,0 +1,36 @@
+# Collection sources. Owner decision D2 (see docs/SRS.md):
+#  - open sources and brochures are enabled by default;
+#  - social-network and movie connectors stay off until `legal_approved: true`
+#    is recorded here by someone authorised to approve it.
+wikimedia:
+  enabled: true
+  thumb_width: 1600
+
+brochure_sites:
+  enabled: true
+  # List pages you are allowed to collect from (manufacturer press/media sites,
+  # brochure archives, review sites whose terms allow it). robots.txt is obeyed.
+  # `model` and `year` are optional; when given they label every image on the page.
+  sites: []
+  #  - make: Toyota
+  #    model: Corolla
+  #    year: 2020
+  #    urls: ["https://example.com/press/corolla-2020-interior"]
+  #    license: "Manufacturer press image"
+
+folder:
+  enabled: true
+  # <path>/<Make>/<Model>/<Year or anything>/*.jpg|*.pdf
+  path: imports
+
+flickr:
+  enabled: false
+  legal_approved: false
+  api_key_env: FLICKR_API_KEY
+  licenses: "1,2,3,4,5,6,9,10"
+
+video_frames:
+  enabled: false
+  legal_approved: false
+  path: imports/videos
+  every_seconds: 2

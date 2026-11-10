@@ -1,0 +1,212 @@
+# Seed taxonomy for the pilot (20 makes, model years 1996 - current).
+# Format: one entry per make; models list generations as [name, first_year, last_year|null].
+# Interiors are largely constant within a generation, so generations are the
+# unit the system reports as a "year range". Facelifts that change the interior
+# can be added as their own generation (e.g. "Mk7.5").
+# Source: compiled from public model histories; verify and extend in the UI or
+# with `carid expand-make <make>` (Wikidata).
+makes:
+  - name: Toyota
+    country: Japan
+    models:
+      - {name: Corolla, generations: [[E110, 1995, 2002], [E120, 2000, 2007], [E140/E150, 2006, 2013], [E170, 2013, 2019], [E210, 2018, null]]}
+      - {name: Camry, generations: [[XV20, 1996, 2001], [XV30, 2001, 2006], [XV40, 2006, 2011], [XV50, 2011, 2017], [XV70, 2017, 2024], [XV80, 2024, null]]}
+      - {name: RAV4, generations: [[XA10, 1994, 2000], [XA20, 2000, 2005], [XA30, 2005, 2012], [XA40, 2012, 2018], [XA50, 2018, 2025], [XA60, 2025, null]]}
+      - {name: Yaris, generations: [[XP10, 1999, 2005], [XP90, 2005, 2011], [XP130, 2011, 2020], [XP210, 2020, null]]}
+      - {name: Land Cruiser Prado, aliases: [Prado], generations: [[J90, 1996, 2002], [J120, 2002, 2009], [J150, 2009, 2023], [J250, 2023, null]]}
+      - {name: Prius, generations: [[XW10, 1997, 2003], [XW20, 2003, 2009], [XW30, 2009, 2015], [XW50, 2015, 2022], [XW60, 2022, null]]}
+      - {name: Hilux, generations: [[N140, 1997, 2005], [AN10, 2004, 2015], [AN120, 2015, null]]}
+      - {name: C-HR, aliases: [CHR], generations: [[AX10, 2016, 2023], [AX20, 2023, null]]}
+  - name: Volkswagen
+    country: Germany
+    aliases: [VW]
+    models:
+      - {name: Golf, generations: [[Mk3, 1991, 1997], [Mk4, 1997, 2003], [Mk5, 2003, 2008], [Mk6, 2008, 2012], [Mk7, 2012, 2019], [Mk8, 2019, null]]}
+      - {name: Polo, generations: [[6N, 1994, 2001], [9N, 2001, 2009], [6R, 2009, 2017], [AW, 2017, null]]}
+      - {name: Passat, generations: [[B5, 1996, 2005], [B6, 2005, 2010], [B7, 2010, 2014], [B8, 2014, 2023], [B9, 2023, null]]}
+      - {name: Tiguan, generations: [[5N, 2007, 2016], [AD1, 2016, 2024], [CT1, 2024, null]]}
+      - {name: Jetta, aliases: [Bora, Vento], generations: [[A4, 1999, 2005], [A5, 2005, 2010], [A6, 2010, 2018], [A7, 2018, null]]}
+      - {name: Touareg, generations: [[7L, 2002, 2010], [7P, 2010, 2018], [CR, 2018, null]]}
+      - {name: ID.4, aliases: [ID4], generations: [[E21, 2020, null]]}
+  - name: Hyundai
+    country: South Korea
+    models:
+      - {name: Elantra, aliases: [Avante, Lantra], generations: [[J3, 1995, 2000], [XD, 2000, 2006], [HD, 2006, 2010], [MD, 2010, 2015], [AD, 2015, 2020], [CN7, 2020, null]]}
+      - {name: Tucson, generations: [[JM, 2004, 2009], [LM, 2009, 2015], [TL, 2015, 2020], [NX4, 2020, null]]}
+      - {name: Santa Fe, generations: [[SM, 2000, 2006], [CM, 2006, 2012], [DM, 2012, 2018], [TM, 2018, 2023], [MX5, 2023, null]]}
+      - {name: i10, generations: [[PA, 2007, 2013], [IA, 2013, 2019], [AC3, 2019, null]]}
+      - {name: i20, generations: [[PB, 2008, 2014], [GB, 2014, 2020], [BC3, 2020, null]]}
+      - {name: i30, generations: [[FD, 2007, 2011], [GD, 2011, 2016], [PD, 2016, null]]}
+      - {name: Sonata, generations: [[EF, 1998, 2004], [NF, 2004, 2009], [YF, 2009, 2014], [LF, 2014, 2019], [DN8, 2019, null]]}
+      - {name: Kona, generations: [[OS, 2017, 2023], [SX2, 2023, null]]}
+      - {name: Ioniq 5, generations: [[NE, 2021, null]]}
+  - name: Kia
+    country: South Korea
+    models:
+      - {name: Sportage, generations: [[NB-7, 1993, 2004], [KM, 2004, 2010], [SL, 2010, 2015], [QL, 2015, 2021], [NQ5, 2021, null]]}
+      - {name: Picanto, aliases: [Morning], generations: [[SA, 2004, 2011], [TA, 2011, 2017], [JA, 2017, null]]}
+      - {name: Rio, generations: [[DC, 2000, 2005], [JB, 2005, 2011], [UB, 2011, 2017], [YB, 2017, null]]}
+      - {name: Ceed, aliases: ["cee'd"], generations: [[ED, 2006, 2012], [JD, 2012, 2018], [CD, 2018, null]]}
+      - {name: Sorento, generations: [[BL, 2002, 2009], [XM, 2009, 2014], [UM, 2014, 2020], [MQ4, 2020, null]]}
+      - {name: Niro, generations: [[DE, 2016, 2022], [SG2, 2022, null]]}
+      - {name: Cerato, aliases: [Forte, K3], generations: [[LD, 2003, 2008], [TD, 2008, 2013], [YD, 2013, 2018], [BD, 2018, null]]}
+      - {name: EV6, generations: [[CV, 2021, null]]}
+  - name: Ford
+    country: United States
+    models:
+      - {name: Focus, generations: [[Mk1, 1998, 2005], [Mk2, 2004, 2011], [Mk3, 2010, 2018], [Mk4, 2018, 2025]]}
+      - {name: Fiesta, generations: [[Mk4, 1995, 2002], [Mk5, 2002, 2008], [Mk6, 2008, 2017], [Mk7, 2017, 2023]]}
+      - {name: Mondeo, aliases: [Fusion], generations: [[Mk2, 1996, 2000], [Mk3, 2000, 2007], [Mk4, 2007, 2014], [Mk5, 2014, 2022]]}
+      - {name: F-150, aliases: [F150], generations: [[10th gen, 1997, 2004], [11th gen, 2004, 2008], [12th gen, 2008, 2014], [13th gen, 2014, 2020], [14th gen, 2020, null]]}
+      - {name: Kuga, aliases: [Escape], generations: [[Mk1, 2008, 2012], [Mk2, 2012, 2019], [Mk3, 2019, null]]}
+      - {name: Explorer, generations: [[2nd gen, 1995, 2001], [3rd gen, 2001, 2005], [4th gen, 2005, 2010], [5th gen, 2010, 2019], [6th gen, 2019, null]]}
+      - {name: Ranger, generations: [[PE/PH, 1998, 2006], [PJ/PK, 2006, 2011], [T6, 2011, 2022], [P703, 2022, null]]}
+      - {name: Mustang, generations: [[SN95, 1994, 2004], [S197, 2004, 2014], [S550, 2014, 2023], [S650, 2023, null]]}
+  - name: Honda
+    country: Japan
+    models:
+      - {name: Civic, generations: [[6th gen, 1995, 2000], [7th gen, 2000, 2005], [8th gen, 2005, 2011], [9th gen, 2011, 2015], [10th gen, 2015, 2021], [11th gen, 2021, null]]}
+      - {name: Accord, generations: [[6th gen, 1997, 2002], [7th gen, 2002, 2007], [8th gen, 2007, 2012], [9th gen, 2012, 2017], [10th gen, 2017, 2022], [11th gen, 2022, null]]}
+      - {name: CR-V, aliases: [CRV], generations: [[RD1, 1995, 2001], [RD4, 2001, 2006], [RE, 2006, 2011], [RM, 2011, 2016], [RW, 2016, 2022], [RS, 2022, null]]}
+      - {name: Jazz, aliases: [Fit], generations: [[GD, 2001, 2008], [GE, 2007, 2014], [GK, 2013, 2020], [GR, 2020, null]]}
+      - {name: HR-V, aliases: [HRV, Vezel], generations: [[GH, 1998, 2006], [RU, 2013, 2021], [RV, 2021, null]]}
+  - name: Nissan
+    country: Japan
+    models:
+      - {name: Qashqai, aliases: [Rogue Sport, Dualis], generations: [[J10, 2006, 2013], [J11, 2013, 2021], [J12, 2021, null]]}
+      - {name: X-Trail, aliases: [XTrail, Rogue], generations: [[T30, 2000, 2007], [T31, 2007, 2013], [T32, 2013, 2022], [T33, 2022, null]]}
+      - {name: Micra, aliases: [March], generations: [[K11, 1992, 2002], [K12, 2002, 2010], [K13, 2010, 2017], [K14, 2017, 2023]]}
+      - {name: Altima, generations: [[L30, 1997, 2001], [L31, 2001, 2006], [L32, 2006, 2012], [L33, 2012, 2018], [L34, 2018, null]]}
+      - {name: Juke, generations: [[F15, 2010, 2019], [F16, 2019, null]]}
+      - {name: Note, generations: [[E11, 2005, 2013], [E12, 2012, 2020], [E13, 2020, null]]}
+      - {name: Leaf, generations: [[ZE0, 2010, 2017], [ZE1, 2017, 2025]]}
+      - {name: Navara, aliases: [Frontier], generations: [[D22, 1997, 2005], [D40, 2005, 2014], [D23, 2014, null]]}
+  - name: Chevrolet
+    country: United States
+    aliases: [Chevy]
+    models:
+      - {name: Cruze, generations: [[J300, 2008, 2016], [J400, 2016, 2019]]}
+      - {name: Spark, generations: [[M200, 2005, 2010], [M300, 2009, 2015], [M400, 2015, 2022]]}
+      - {name: Malibu, generations: [[5th gen, 1997, 2003], [6th gen, 2004, 2007], [7th gen, 2008, 2012], [8th gen, 2013, 2015], [9th gen, 2016, 2025]]}
+      - {name: Silverado, generations: [[GMT800, 1998, 2006], [GMT900, 2006, 2013], [K2XX, 2013, 2018], [T1XX, 2018, null]]}
+      - {name: Equinox, generations: [[1st gen, 2004, 2009], [2nd gen, 2009, 2017], [3rd gen, 2017, 2024], [4th gen, 2024, null]]}
+      - {name: Aveo, aliases: [Sonic, Kalos], generations: [[T200, 2002, 2008], [T250, 2005, 2011], [T300, 2011, 2020]]}
+      - {name: Captiva, generations: [[C100/C140, 2006, 2018]]}
+  - name: Mercedes-Benz
+    country: Germany
+    aliases: [Mercedes, Benz]
+    models:
+      - {name: C-Class, aliases: [C Class], generations: [[W202, 1993, 2000], [W203, 2000, 2007], [W204, 2007, 2014], [W205, 2014, 2021], [W206, 2021, null]]}
+      - {name: E-Class, aliases: [E Class], generations: [[W210, 1995, 2002], [W211, 2002, 2009], [W212, 2009, 2016], [W213, 2016, 2023], [W214, 2023, null]]}
+      - {name: A-Class, aliases: [A Class], generations: [[W168, 1997, 2004], [W169, 2004, 2012], [W176, 2012, 2018], [W177, 2018, null]]}
+      - {name: S-Class, aliases: [S Class], generations: [[W140, 1991, 1998], [W220, 1998, 2005], [W221, 2005, 2013], [W222, 2013, 2020], [W223, 2020, null]]}
+      - {name: GLC, generations: [[X253, 2015, 2022], [X254, 2022, null]]}
+      - {name: GLE, aliases: [M-Class, ML], generations: [[W163, 1997, 2005], [W164, 2005, 2011], [W166, 2011, 2019], [W167, 2019, null]]}
+      - {name: Sprinter, generations: [[T1N, 1995, 2006], [NCV3, 2006, 2018], [VS30, 2018, null]]}
+  - name: BMW
+    country: Germany
+    models:
+      - {name: 3 Series, generations: [[E36, 1990, 2000], [E46, 1998, 2006], [E90, 2005, 2013], [F30, 2011, 2019], [G20, 2018, null]]}
+      - {name: 5 Series, generations: [[E39, 1995, 2004], [E60, 2003, 2010], [F10, 2010, 2017], [G30, 2017, 2023], [G60, 2023, null]]}
+      - {name: X3, generations: [[E83, 2003, 2010], [F25, 2010, 2017], [G01, 2017, 2024], [G45, 2024, null]]}
+      - {name: X5, generations: [[E53, 1999, 2006], [E70, 2006, 2013], [F15, 2013, 2018], [G05, 2018, null]]}
+      - {name: 1 Series, generations: [[E87, 2004, 2011], [F20, 2011, 2019], [F40, 2019, 2024], [F70, 2024, null]]}
+      - {name: 7 Series, generations: [[E38, 1994, 2001], [E65, 2001, 2008], [F01, 2008, 2015], [G11, 2015, 2022], [G70, 2022, null]]}
+  - name: Audi
+    country: Germany
+    models:
+      - {name: A3, generations: [[8L, 1996, 2003], [8P, 2003, 2012], [8V, 2012, 2020], [8Y, 2020, null]]}
+      - {name: A4, generations: [[B5, 1994, 2001], [B6, 2000, 2004], [B7, 2004, 2008], [B8, 2007, 2015], [B9, 2015, 2024]]}
+      - {name: A6, generations: [[C5, 1997, 2004], [C6, 2004, 2011], [C7, 2011, 2018], [C8, 2018, null]]}
+      - {name: Q5, generations: [[8R, 2008, 2017], [FY, 2017, 2024], [GU, 2024, null]]}
+      - {name: Q7, generations: [[4L, 2005, 2015], [4M, 2015, null]]}
+      - {name: A1, generations: [[8X, 2010, 2018], [GB, 2018, null]]}
+      - {name: Q3, generations: [[8U, 2011, 2018], [F3, 2018, null]]}
+  - name: Mazda
+    country: Japan
+    models:
+      - {name: Mazda3, aliases: [Mazda 3, Axela], generations: [[BK, 2003, 2009], [BL, 2009, 2013], [BM/BN, 2013, 2019], [BP, 2019, null]]}
+      - {name: Mazda6, aliases: [Mazda 6, Atenza], generations: [[GG, 2002, 2008], [GH, 2007, 2013], [GJ/GL, 2012, 2024]]}
+      - {name: CX-5, aliases: [CX5], generations: [[KE, 2012, 2017], [KF, 2017, null]]}
+      - {name: Mazda2, aliases: [Mazda 2, Demio], generations: [[DY, 2002, 2007], [DE, 2007, 2014], [DJ, 2014, null]]}
+      - {name: MX-5, aliases: [MX5, Miata, Roadster], generations: [[NB, 1998, 2005], [NC, 2005, 2015], [ND, 2015, null]]}
+      - {name: 323, aliases: [Protege, Familia], generations: [[BJ, 1998, 2003]]}
+      - {name: CX-30, aliases: [CX30], generations: [[DM, 2019, null]]}
+  - name: Skoda
+    country: Czech Republic
+    aliases: [Škoda]
+    models:
+      - {name: Octavia, generations: [[1U, 1996, 2010], [1Z, 2004, 2013], [5E, 2012, 2020], [NX, 2019, null]]}
+      - {name: Fabia, generations: [[6Y, 1999, 2007], [5J, 2007, 2014], [NJ, 2014, 2021], [PJ, 2021, null]]}
+      - {name: Superb, generations: [[3U, 2001, 2008], [3T, 2008, 2015], [3V, 2015, 2023], [B9, 2023, null]]}
+      - {name: Kodiaq, generations: [[NS, 2016, 2024], [PS, 2024, null]]}
+      - {name: Karoq, generations: [[NU, 2017, null]]}
+      - {name: Kamiq, generations: [[NW, 2019, null]]}
+  - name: Renault
+    country: France
+    models:
+      - {name: Clio, generations: [[Clio II, 1998, 2012], [Clio III, 2005, 2014], [Clio IV, 2012, 2019], [Clio V, 2019, null]]}
+      - {name: Megane, aliases: [Mégane], generations: [[Megane I, 1995, 2003], [Megane II, 2002, 2009], [Megane III, 2008, 2016], [Megane IV, 2015, 2022]]}
+      - {name: Captur, generations: [[J87, 2013, 2019], [HJB, 2019, null]]}
+      - {name: Kadjar, generations: [[HA/HL, 2015, 2022]]}
+      - {name: Duster, generations: [[HS, 2010, 2017], [HM, 2017, 2024], [RJI, 2024, null]]}
+      - {name: Scenic, aliases: [Scénic], generations: [[Scenic I, 1996, 2003], [Scenic II, 2003, 2009], [Scenic III, 2009, 2016], [Scenic IV, 2016, 2022]]}
+      - {name: Laguna, generations: [[Laguna I, 1993, 2001], [Laguna II, 2001, 2007], [Laguna III, 2007, 2015]]}
+  - name: Peugeot
+    country: France
+    models:
+      - {name: "206", generations: [[T1, 1998, 2012]]}
+      - {name: "207", generations: [[A7, 2006, 2014]]}
+      - {name: "208", generations: [[A9, 2012, 2019], [P21, 2019, null]]}
+      - {name: "307", generations: [[T5/T6, 2001, 2008]]}
+      - {name: "308", generations: [[T7, 2007, 2013], [T9, 2013, 2021], [P5, 2021, null]]}
+      - {name: "3008", generations: [[T84, 2008, 2016], [P84, 2016, 2023], [P64, 2023, null]]}
+      - {name: "2008", generations: [[A94, 2013, 2019], [P24, 2019, null]]}
+      - {name: "406", generations: [[D8/D9, 1995, 2004]]}
+      - {name: "407", generations: [[D2, 2004, 2011]]}
+      - {name: "508", generations: [[W2, 2010, 2018], [R8, 2018, null]]}
+  - name: Mitsubishi
+    country: Japan
+    models:
+      - {name: Lancer, generations: [[CK/CM, 1995, 2003], [CS, 2000, 2007], [CY/CZ, 2007, 2017]]}
+      - {name: Outlander, generations: [[CU, 2001, 2006], [CW, 2005, 2012], [GF/GG, 2012, 2021], [GN, 2021, null]]}
+      - {name: Pajero, aliases: [Montero, Shogun], generations: [[V20, 1991, 1999], [V60, 1999, 2006], [V80, 2006, 2021]]}
+      - {name: ASX, aliases: [RVR, Outlander Sport], generations: [[GA, 2010, 2023], [2nd gen, 2023, null]]}
+      - {name: Space Star, aliases: [Mirage], generations: [[A00, 2012, null]]}
+      - {name: L200, aliases: [Triton], generations: [[K60/K70, 1996, 2005], [KB4, 2005, 2015], [KJ/KK/KL, 2015, 2024], [6th gen, 2024, null]]}
+      - {name: Eclipse Cross, generations: [[GK, 2017, null]]}
+  - name: Subaru
+    country: Japan
+    models:
+      - {name: Impreza, generations: [[GC, 1992, 2000], [GD, 2000, 2007], [GE/GH, 2007, 2011], [GJ/GP, 2011, 2016], [GT, 2016, 2023], [GU, 2023, null]]}
+      - {name: Forester, generations: [[SF, 1997, 2002], [SG, 2002, 2008], [SH, 2008, 2013], [SJ, 2012, 2018], [SK, 2018, 2024], [SL, 2024, null]]}
+      - {name: Outback, generations: [[BE/BH, 1998, 2003], [BP, 2003, 2009], [BR, 2009, 2014], [BS, 2014, 2019], [BT, 2019, null]]}
+      - {name: Legacy, generations: [[BE/BH, 1998, 2003], [BL/BP, 2003, 2009], [BM/BR, 2009, 2014], [BN/BS, 2014, 2019], [BW, 2019, 2025]]}
+      - {name: XV, aliases: [Crosstrek], generations: [[GP, 2012, 2017], [GT, 2017, 2023], [GU, 2023, null]]}
+  - name: Suzuki
+    country: Japan
+    models:
+      - {name: Swift, generations: [[SF, 1989, 2003], [RS, 2004, 2010], [FZ/NZ, 2010, 2017], [A2L, 2017, 2024], [AZ, 2024, null]]}
+      - {name: Vitara, aliases: [Grand Vitara], generations: [[FT/GT, 1998, 2005], [JT, 2005, 2015], [LY, 2015, null]]}
+      - {name: SX4, aliases: [S-Cross], generations: [[GY, 2006, 2014], [JY, 2013, null]]}
+      - {name: Jimny, generations: [[JB23/JB43, 1998, 2018], [JB64/JB74, 2018, null]]}
+      - {name: Baleno, generations: [[EW, 2015, 2022], [2nd gen, 2022, null]]}
+      - {name: Ignis, generations: [[MF, 2016, null]]}
+  - name: Tesla
+    country: United States
+    models:
+      - {name: Model S, generations: [[Original, 2012, 2016], [2016 facelift, 2016, 2021], [Palladium, 2021, null]]}
+      - {name: Model 3, generations: [[Original, 2017, 2023], [Highland, 2023, null]]}
+      - {name: Model X, generations: [[Original, 2015, 2021], [Palladium, 2021, null]]}
+      - {name: Model Y, generations: [[Original, 2020, 2025], [Juniper, 2025, null]]}
+      - {name: Cybertruck, generations: [[1st gen, 2023, null]]}
+  - name: Seat
+    country: Spain
+    aliases: [SEAT]
+    models:
+      - {name: Ibiza, generations: [[6K, 1993, 2002], [6L, 2002, 2008], [6J, 2008, 2017], [6F, 2017, null]]}
+      - {name: Leon, aliases: [León], generations: [[1M, 1999, 2005], [1P, 2005, 2012], [5F, 2012, 2020], [KL, 2020, null]]}
+      - {name: Ateca, generations: [[KH7, 2016, null]]}
+      - {name: Arona, generations: [[KJ7, 2017, null]]}
+      - {name: Toledo, generations: [[1M, 1998, 2004], [5P, 2004, 2009], [NH, 2012, 2019]]}
+      - {name: Altea, generations: [[5P, 2004, 2015]]}
