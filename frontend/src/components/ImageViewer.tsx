@@ -89,7 +89,7 @@ export function ImageViewer({ src, overlay, showParts, showFaces, highlight, man
         parts.map((p) => (
           <div
             key={p.part}
-            className={`box ${highlight === p.part ? "hl" : ""}`}
+            className={`box ${p.method === "layout-prior" ? "prior" : ""} ${highlight === p.part ? "hl" : ""}`}
             style={boxStyle(p.bbox)}
             title={`${PART_LABELS[p.part] ?? p.part} · ${p.method} · ${(p.score * 100).toFixed(0)}%`}
           >

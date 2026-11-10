@@ -63,9 +63,12 @@ export function ResultView({ result, imageSrc, manual = [], drawPart = null, onD
               {result.parts
                 .filter((p) => p.part !== "whole")
                 .map((p) => (
-                  <Chip key={p.part} kind="part" title={`${p.method}, score ${p.score}`}>
-                    {PART_LABELS[p.part] ?? p.part}
-                  </Chip>
+                  <span key={p.part} onMouseEnter={() => setHl(p.part)} onMouseLeave={() => setHl(null)}>
+                    <Chip kind="part" title={p.method === "layout-prior" ? "position estimated from typical layout" : `detected (${p.method}), score ${p.score}`}>
+                      {PART_LABELS[p.part] ?? p.part}
+                      {p.method === "layout-prior" ? " ·est" : ""}
+                    </Chip>
+                  </span>
                 ))}
               {result.faces.length > 0 && <Chip kind="warn">{result.faces.length} face(s) masked</Chip>}
             </div>

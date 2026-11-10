@@ -135,6 +135,10 @@ input[type="range"] { accent-color: var(--accent); width: 100%; }
 .viewer.drawing { cursor: crosshair; }
 .box { position: absolute; border: 2px solid var(--violet); border-radius: 3px; pointer-events: none; }
 .box span { position: absolute; top: -20px; left: -2px; background: var(--violet); color: #0b0f16; font-size: 10.5px; font-weight: 700; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.box.prior { border-width: 1px; border-style: dashed; opacity: 0.55; }
+.box.prior span { display: none; }
+.box.prior.hl, .box.hl { opacity: 1; }
+.box.prior.hl span { display: block; }
 .box.face { border-color: var(--warn); background: repeating-linear-gradient(45deg, #fbbf2422 0 6px, transparent 6px 12px); }
 .box.face span { background: var(--warn); }
 .box.manual { border-color: var(--good); border-style: dashed; }
