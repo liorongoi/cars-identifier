@@ -48,3 +48,35 @@ and shown in the Benchmarks screen.
 Fine-tune the backbone with metric learning on the collected images (Phase 3).
 This keeps the nearest-neighbour design (new makes still need no retraining)
 while making embeddings specific to car interiors.
+
+## First real benchmark — 2026-11-11
+
+Data: 811 interior photos from Openverse (20 pilot makes, 116 models, 182
+model/generation classes, ~7 images per model). Embedder CLIP ViT-B/32, part
+detector OWLv2, CPU. 120 test photos; **split grouped by photographer** so a
+series of shots of the same car is never on both sides (a random split gave
+inflated top-5 of ~80% because the system recognised sibling shots).
+
+Model top-5 / make top-1 (honest grouped split):
+
+| Mode | Clean | Low light | Blur | Occlusion |
+|---|---|---|---|---|
+| fusion | 23% / 50% | 16% / 37% | 7% / 12% | 22% / 42% |
+| fusion + LDA adapter | 29% / 50% | 23% / 45% | 13% / 27% | 26% / 46% |
+| global (whole image) | 34% / 43% | 23% / 30% | 14% / 21% | 27% / 33% |
+| **global + LDA adapter** | **34% / 46%** | **29% / 40%** | **21% / 28%** | **28% / 35%** |
+| parts | 19% / 42% | 15% / 34% | 7% / 8% | 17% / 35% |
+| parts + LDA adapter | 25% / 51% | 20% / 42% | 7% / 19% | 23% / 42% |
+
+Findings:
+1. The LDA adapter improves every mode (+4 to +10 points mean model top-5).
+2. Whole-image matching beats part-based matching on real photos; OWLv2 parts
+   on uncurated photos are noisy. Parts help make-level accuracy (parts+LDA has
+   the best clean make top-1, 51%).
+3. With ~7 images per model, identifying the model of an unseen car is far
+   below the SRS target (NFR-2: 85% top-5). The main lever is **more and
+   cleaner data per generation**; second, a stronger backbone (ViT-L/14 or
+   DINOv2) and metric-learning fine-tuning once data allows.
+
+The server now runs in `matcher_mode: auto`, which uses the latest benchmark's
+winner (currently `global` with the adapter).

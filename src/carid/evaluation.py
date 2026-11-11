@@ -187,6 +187,7 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
     }
     with engine.db.session() as s:
         s.add(Benchmark(job_id=job_id, embedder=engine.embedder.name, report=report))
+    engine.forget_auto_mode()  # 'auto' matching follows the newest benchmark
     return report
 
 

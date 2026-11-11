@@ -79,3 +79,21 @@ def test_benchmark_compares_raw_and_adapted(populated: Engine) -> None:
     assert set(report["modes"]) == {"fusion", "fusion+lda", "global", "global+lda",
                                     "parts", "parts+lda"}
     assert report["results"]["clean"]["fusion+lda"]["model"]["n"] == 8
+
+
+def test_auto_mode_follows_latest_benchmark(populated: Engine) -> None:
+    from carid.models import Benchmark
+
+    assert populated.settings.matcher_mode == "auto"
+    assert populated.resolved_mode() == ("fusion", True)  # no benchmark yet
+    with populated.db.session() as s:
+        s.add(Benchmark(embedder=populated.embedder.name, report={"best_mode": "global"}))
+    populated.forget_auto_mode()
+    assert populated.resolved_mode() == ("global", False)
+    assert populated.describe()["matcher_mode"] == "auto: global (adapter off)"
+    with populated.db.session() as s:
+        s.add(Benchmark(embedder="other-embedder", report={"best_mode": "parts+lda"}))
+    populated.forget_auto_mode()
+    assert populated.resolved_mode() == ("global", False)  # other embedder's result ignored
+    report = run_benchmark(populated, max_test=4, degradations=[])
+    assert populated.resolved_mode()[0] == report["best_mode"].split("+")[0]

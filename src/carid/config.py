@@ -70,7 +70,9 @@ class Settings(BaseSettings):
     allow_model_download: bool = True  # set False on the offline server
 
     # Matching
-    matcher_mode: Literal["fusion", "global", "parts"] = "fusion"
+    # "auto": use the best mode (and adapter on/off) of the latest benchmark; before any
+    # benchmark exists it falls back to "fusion".
+    matcher_mode: Literal["auto", "fusion", "global", "parts"] = "auto"
     use_adapter: bool = True  # apply the learned LDA adapter when one has been trained
     adapter_shrinkage: float = Field(0.5, ge=0.0, le=1.0)
     top_k: int = Field(10, ge=1, le=50)

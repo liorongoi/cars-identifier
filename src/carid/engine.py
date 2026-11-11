@@ -21,6 +21,7 @@ from carid.index import IndexSet
 from carid.matcher import ClassScore, Label, MatchParams, Mode, make_probabilities, rank
 from carid.models import (
     AuditEvent,
+    Benchmark,
     Generation,
     Identification,
     Image,
@@ -127,6 +128,7 @@ class Engine:
         self._labels_version = -1
         self._version = 0
         self._labels_lock = threading.Lock()
+        self._auto_mode: tuple[Mode, bool] | None = None
         self._ph_ids = np.zeros(0, dtype=np.int64)
         self._ph_vals = np.zeros(0, dtype=np.uint64)
         self._load_phashes()
@@ -141,7 +143,7 @@ class Engine:
             "face_detector": self.faces.backend,
             "deep_models": not self.embedder.name.startswith("handcrafted"),
             "index_sizes": self.index.sizes(),
-            "matcher_mode": self.settings.matcher_mode,
+            "matcher_mode": self._mode_label(),
             "adapter": sorted(self.index.adapters),
         }
 
@@ -230,9 +232,38 @@ class Engine:
 
     # ---------------------------------------------------------------- identify
 
+    def resolved_mode(self) -> tuple[Mode, bool]:
+        """(mode, use adapter) — from settings, or from the latest benchmark when 'auto'."""
+        if self.settings.matcher_mode != "auto":
+            return self.settings.matcher_mode, True
+        if self._auto_mode is None:
+            best = None
+            with self.db.session() as s:
+                b = s.scalars(select(Benchmark).where(Benchmark.embedder == self.embedder.name)
+                              .order_by(Benchmark.id.desc()).limit(1)).first()
+                if b is not None:
+                    best = b.report.get("best_mode")
+            mode, _, variant = str(best or "fusion").partition("+")
+            if mode not in ("fusion", "global", "parts"):
+                mode = "fusion"
+            # Adapter stays on unless the benchmark showed the raw variant winning.
+            self._auto_mode = (mode, variant == "lda" or best is None)  # type: ignore[assignment]
+        assert self._auto_mode is not None
+        return self._auto_mode
+
+    def _mode_label(self) -> str:
+        mode, use_adapter = self.resolved_mode()
+        source = "auto: " if self.settings.matcher_mode == "auto" else ""
+        return f"{source}{mode}{'' if use_adapter else ' (adapter off)'}"
+
+    def forget_auto_mode(self) -> None:
+        self._auto_mode = None
+
     def match(self, analysis: Analysis, opts: IdentifyOptions) -> list[ClassScore]:
+        mode, use_adapter = self.resolved_mode()
         params = MatchParams(
-            mode=opts.mode or self.settings.matcher_mode,
+            mode=opts.mode or mode,
+            adapters=None if use_adapter else {},
             neighbors_per_part=self.settings.neighbors_per_part,
             votes_per_class=self.settings.votes_per_class,
             similarity_temperature=self.settings.similarity_temperature,

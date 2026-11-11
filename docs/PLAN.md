@@ -30,6 +30,12 @@ reviewed system — never a half-built one.
 - ✅ First pilot collection run from the development sandbox (Wikimedia API is
   rate-limited there); its manifest is in `data/manifests/` so the owner's host can
   re-download the same images.
+- ✅ Label quality rules from real data: titles outrank tags, out-of-scope model
+  years rejected, `carid recheck-labels`.
+- ✅ First real benchmark (see ALGORITHMS.md): honest grouped split; LDA adapter
+  helps every mode; whole-image matching wins; accuracy limited by data volume.
+- ⏳ Grow the data: Openverse app registration (higher quota), Wikimedia from the
+  owner's host, brochure sites/folders, more queries per model.
 
 1. Owner confirms the pilot make list and brochure sites (SRS §8).
 2. `carid fetch-models` to cache weights; `carid collect --make <all pilot>`.
