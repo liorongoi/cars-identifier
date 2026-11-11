@@ -105,3 +105,31 @@ Findings:
    fine detail on knobs, vents and switches.
 3. Next experiment for small items: a finer-grained backbone (DINOv2 ViT-B/14 or
    CLIP ViT-L/14, 14 px patches), plus more photos per model.
+
+## Backbone comparison: DINOv2-small vs CLIP ViT-B/32 — 2026-11-11
+
+Same 839 photos, same photographer-grouped split (120 test photos), detail tiles
+on, adapter retrained for each backbone. Model top-5 (model top-10):
+
+| Condition | CLIP global+LDA | CLIP fusion+LDA | DINOv2-small best mode |
+|---|---|---|---|
+| Full photo | **28% (38%)** | 31% (36%) | 15% (18%) |
+| Close-up (small item) | **14% (25%)** | 11% (17%) | 12% (22%) |
+| Low light | **25% (33%)** | 22% (32%) | 13% (22%) |
+| Occlusion | **29% (39%)** | 22% (35%) | 17% (22%) |
+
+Make top-5: CLIP 50-69%, DINOv2-small 41-53%.
+
+Findings:
+1. DINOv2-small is worse than CLIP everywhere, including close-ups, so CLIP
+   ViT-B/32 stays the default (`CARID_EMBEDDER=dinov2` remains available).
+   DINOv2's self-supervised features capture texture and lighting more than
+   the semantic cues (shapes of controls, layout) that separate models.
+2. Close-ups score about the same with both backbones (12-14% top-5), so the
+   backbone is not the main limit for small items. The limit is the data: with
+   about 7 photos per model, the specific knob or vent in a close-up is often
+   not visible in any reference photo of that model.
+3. Next steps, in order of expected gain: more photos per model (the 574
+   Wikimedia images that the sandbox could not download, plus brochures and
+   the user's own folders); then CLIP ViT-L/14 on a GPU server; then
+   metric-learning fine-tuning once there are about 30+ photos per model.
