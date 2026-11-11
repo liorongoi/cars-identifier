@@ -2,8 +2,9 @@
 
 Enabled by default (owner decision D2): Wikimedia Commons, brochure/press web
 pages listed in the sources file, local folder import (images and brochure PDFs).
-Opt-in, gated by ``legal_approved``: Flickr (social network, official API) and
-video frames (movies/clips the owner supplies).
+Opt-in, gated by ``legal_approved``: Flickr (social network, official API), Brave
+web image search (official API, unknown licences) and video frames (movies/clips
+the owner supplies).
 """
 
 from __future__ import annotations
@@ -544,3 +545,84 @@ class ManifestSource(SourceConnector):
 
 CONNECTOR_CLASSES[OpenverseSource.name] = OpenverseSource
 CONNECTOR_CLASSES[ManifestSource.name] = ManifestSource
+
+
+# --------------------------------------------------------------------------- opt-in: Brave
+
+
+class BraveImageSource(SourceConnector):
+    """Web image search through the Brave Search API (its own index of the open web). Opt-in.
+
+    Results come from arbitrary websites with unknown licences, so this connector is
+    gated by ``legal_approved``. Brave's standard plans do not grant storage rights
+    for search results; check the plan's terms before approving. Search calls are
+    billed per request, so ``max_queries_per_model`` keeps the cost per model low.
+    Images are downloaded from the original site, obeying its robots.txt.
+    """
+
+    name = "brave_images"
+    description = "Open-web image search via Brave Search API, unknown licences (opt-in)"
+    requires_legal_approval = True
+    API = "https://api.search.brave.com/res/v1/images/search"
+
+    def __init__(self, config: dict[str, Any], http: Any) -> None:
+        super().__init__(config, http)
+        if http is not None:
+            http.host_intervals.setdefault("api.search.brave.com",
+                                           float(config.get("min_interval_s", 1.1)))
+
+    def _query(self, key: str, params: dict[str, Any]) -> dict[str, Any]:
+        try:
+            r = self.http.get(self.API, params=params, check_robots=False,
+                              headers={"X-Subscription-Token": key,
+                                       "Accept": "application/json"})
+        except HostPaused as exc:
+            raise SourceExhausted(f"Brave rate limit reached ({exc})") from exc
+        except FetchError as exc:
+            msg = str(exc)
+            if "HTTP 401" in msg or "HTTP 403" in msg:
+                raise SourceExhausted("Brave API key rejected") from exc
+            if "HTTP 402" in msg or "429" in msg:
+                raise SourceExhausted("Brave quota or credit used up") from exc
+            raise
+        data: dict[str, Any] = r.json()
+        return data
+
+    def search(self, target: Target, limit: int) -> Iterator[Candidate]:
+        key = os.environ.get(str(self.config.get("api_key_env", "BRAVE_API_KEY")), "")
+        if not key:
+            raise SourceExhausted("API key environment variable not set")
+        count = max(1, min(int(self.config.get("count", 50)), 200))
+        max_queries = int(self.config.get("max_queries_per_model", 2))
+        excluded = {str(d).lower() for d in self.config.get("exclude_domains", [])}
+        seen: set[str] = set()
+        for query in search_queries(target)[:max_queries]:
+            params: dict[str, Any] = {"q": query, "count": count,
+                                      "safesearch": self.config.get("safesearch", "strict"),
+                                      # Model names are often not dictionary words.
+                                      "spellcheck": "false"}
+            for opt in ("country", "search_lang"):
+                if self.config.get(opt):
+                    params[opt] = self.config[opt]
+            for r in self._query(key, params).get("results", []):
+                url = (r.get("properties") or {}).get("url")
+                host = str(r.get("source") or "").lower()
+                if not url or url in seen or not str(url).startswith(("http://", "https://")):
+                    continue
+                if any(host == d or host.endswith("." + d) for d in excluded):
+                    continue
+                seen.add(url)
+                path = str((r.get("meta_url") or {}).get("path") or "")
+                yield Candidate(
+                    url=url, page_url=r.get("url"),
+                    title=" ".join(_strip_html(str(r.get("title") or "")).split()),
+                    # Page paths often name the car ("/2020-toyota-corolla-interior").
+                    extra_text=re.sub(r"[/_\-.›]+", " ", path).strip(),
+                    license="unknown (web search result; rights not verified)",
+                    credit=host or None,
+                )
+                if len(seen) >= limit:
+                    return
+
+
+CONNECTOR_CLASSES[BraveImageSource.name] = BraveImageSource

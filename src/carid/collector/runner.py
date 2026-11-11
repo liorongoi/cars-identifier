@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 # Sources whose search results are uncurated; without a deep interior classifier we only
 # accept their images when the text explicitly says "interior".
-UNCURATED_SOURCES = {"wikimedia", "flickr"}
+UNCURATED_SOURCES = {"wikimedia", "flickr", "brave_images"}
 
 
 def load_sources_config(path: Path) -> dict[str, Any]:

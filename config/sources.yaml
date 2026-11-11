@@ -47,6 +47,23 @@ flickr:
   api_key_env: FLICKR_API_KEY
   licenses: "1,2,3,4,5,6,9,10"
 
+brave_images:
+  # Open-web image search through the Brave Search API (Google's Custom Search
+  # API is closed to new customers and shuts down on 2027-01-01). Results come
+  # from any website with unknown licences, and Brave's standard plans do not
+  # grant storage rights for results: get legal approval before turning it on.
+  # Key: create one at https://brave.com/search/api/ and set it on the server as
+  # the environment variable below (never commit it). Billed per search request.
+  enabled: false
+  legal_approved: false
+  api_key_env: BRAVE_API_KEY
+  count: 50                  # results per search, max 200
+  max_queries_per_model: 2   # searches per model per job (cost control)
+  safesearch: strict
+  # country: ALL
+  # search_lang: en
+  exclude_domains: []        # e.g. [pinterest.com] to skip re-posting sites
+
 video_frames:
   enabled: false
   legal_approved: false

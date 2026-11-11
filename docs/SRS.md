@@ -139,7 +139,7 @@ Priority: **M** = must (v1), **S** = should (v1 if time allows), **C** = could (
 |---|---|---|
 | FR-COL-1 | Pluggable **source connectors** with a common interface (search → candidates → download). | M |
 | FR-COL-2 | Enabled-by-default connectors: **Wikimedia Commons**, **Openverse** (open-licence catalogue via its official API; Flickr-origin results can be excluded by config), **manufacturer brochure / press sites** (configured URL list, robots.txt respected), **local folder import** (brochure PDFs and images the owner already holds), **CSV manifests** (links + labels exported from another host). | M |
-| FR-COL-3 | Opt-in connectors (disabled unless `legal_approved`): **social networks** (via official APIs and credentials supplied by the owner), **movie frames** (from video files the owner supplies; frames sampled and filtered). | M |
+| FR-COL-3 | Opt-in connectors (disabled unless `legal_approved`): **social networks** (via official APIs and credentials supplied by the owner), **open-web image search** (Brave Search API; results have unknown licences and the standard plan grants no storage rights; Google's Custom Search API is closed to new customers and ends 2027-01-01), **movie frames** (from video files the owner supplies; frames sampled and filtered). | M |
 | FR-COL-4 | Query generation per model (e.g. "Toyota Corolla interior", "Toyota Corolla dashboard"), multilingual variants for non-English markets. | M |
 | FR-COL-5 | **Interior filter**: discard images that are not car interiors (zero-shot classifier score below threshold). | M |
 | FR-COL-6 | **Label inference**: derive make/model from source metadata (title, categories, captions); keep a label-confidence value. | M |

@@ -11,11 +11,12 @@ blur and poor light; shows its evidence.
 
 ## What it does
 
-1. **Collects** interior images per `Make › Model › Year` from Wikimedia Commons,
+1. **Collects** interior images per `Make › Model` from Wikimedia Commons,
    Openverse (open-licence catalogue, official API), brochure/press pages you list,
    a local import folder (images + brochure PDFs), and CSV manifests of links.
-   Social-network (Flickr API) and movie-frame connectors exist but stay **off**
-   until legal approval is recorded in `config/sources.yaml`.
+   Social-network (Flickr API), open-web image search (Brave Search API) and
+   movie-frame connectors exist but stay **off** until legal approval is recorded
+   in `config/sources.yaml`.
 2. **Cleans** them: de-duplication, interior check, faces blurred, label confidence.
 3. **Identifies** a query image: quality check → enhancement → face masking →
    part detection (steering wheel, cluster, screen, vents, console…) → per-part
@@ -54,6 +55,19 @@ Without them the system runs on a lightweight built-in descriptor and says so in
 
 Local brochures and images: put them under `imports/<Make>/<Model>/<Year>/` and run a
 collection job; the `folder` source picks them up (PDFs need the `pdf` extra).
+
+## API keys for collection sources
+
+Keys are read from environment variables on the server (never commit them):
+
+| Source | Variables | Where to get one |
+|---|---|---|
+| Openverse (optional, higher limits) | `OPENVERSE_CLIENT_ID`, `OPENVERSE_CLIENT_SECRET` | `POST https://api.openverse.org/v1/auth_tokens/register/` |
+| Brave web image search (opt-in) | `BRAVE_API_KEY` | https://brave.com/search/api/ |
+| Flickr (opt-in) | `FLICKR_API_KEY` | https://www.flickr.com/services/apps/create/ |
+
+To turn on an opt-in source, set `enabled: true` and, once someone authorised has
+approved it, `legal_approved: true` for that source in `config/sources.yaml`.
 
 ## Docker
 

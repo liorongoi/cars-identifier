@@ -431,3 +431,62 @@ def test_openverse_uses_app_credentials_and_refreshes_expired_token(
     src = OpenverseSource({"enabled": True, "max_queries_per_model": 1}, client)
     assert [c.url for c in src.search(_target(engine), 5)] == ["https://img.test/1.jpg"]
     assert issued == ["tok0", "tok1"]
+
+
+def _brave_result(i: int, title: str, host: str = "cars.test") -> dict[str, Any]:
+    return {"type": "image_result", "title": title, "url": f"https://{host}/page{i}",
+            "source": host, "thumbnail": {"src": f"https://imgs.brave.test/{i}"},
+            "properties": {"url": f"https://{host}/img/{i}.jpg"},
+            "meta_url": {"hostname": host, "path": f"› reviews › alpha-roadster-interior-{i}"}}
+
+
+def test_brave_source_is_gated_and_parses_results(engine: Engine,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    from carid.collector.sources import BraveImageSource
+
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"type": "images", "results": [
+            _brave_result(1, "Alpha Roadster <b>interior</b>"),
+            _brave_result(2, "Alpha Roadster dash", host="www.pins.test"),
+            _brave_result(1, "duplicate"),
+            {"type": "image_result", "title": "no url", "properties": {}},
+        ]})
+
+    client, _ = _client(handler)
+    assert not BraveImageSource({"enabled": True}, client).runnable
+    monkeypatch.setenv("BRAVE_TEST_KEY", "k-123")
+    src = BraveImageSource({"enabled": True, "legal_approved": True,
+                            "api_key_env": "BRAVE_TEST_KEY", "max_queries_per_model": 1,
+                            "count": 500, "exclude_domains": ["pins.test"]}, client)
+    assert src.runnable
+    cands = list(src.search(_target(engine), 10))
+    assert [c.url for c in cands] == ["https://cars.test/img/1.jpg"]
+    c = cands[0]
+    assert c.title == "Alpha Roadster interior" and c.page_url == "https://cars.test/page1"
+    assert "alpha roadster interior 1" in c.extra_text and c.credit == "cars.test"
+    assert c.license and "unknown" in c.license
+    assert len(calls) == 1
+    req = calls[0]
+    assert req.headers["X-Subscription-Token"] == "k-123"
+    assert req.url.params["count"] == "200" and req.url.params["safesearch"] == "strict"
+    assert req.url.params["spellcheck"] == "false"
+
+
+def test_brave_source_stops_on_missing_key_or_quota(engine: Engine,
+                                                    monkeypatch: pytest.MonkeyPatch) -> None:
+    from carid.collector.base import SourceExhausted
+    from carid.collector.sources import BraveImageSource
+
+    cfg = {"enabled": True, "legal_approved": True, "api_key_env": "BRAVE_TEST_KEY"}
+    monkeypatch.delenv("BRAVE_TEST_KEY", raising=False)
+    client, _ = _client(lambda r: httpx.Response(500))
+    with pytest.raises(SourceExhausted, match="key"):
+        list(BraveImageSource(cfg, client).search(_target(engine), 5))
+    monkeypatch.setenv("BRAVE_TEST_KEY", "bad")
+    for status, words in ((401, "rejected"), (402, "used up")):
+        client, _ = _client(lambda r, s=status: httpx.Response(s))
+        with pytest.raises(SourceExhausted, match=words):
+            list(BraveImageSource(cfg, client).search(_target(engine), 5))
