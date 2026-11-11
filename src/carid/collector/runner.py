@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session, selectinload
 
 from carid.collector.base import (
     FetchError,
-    GenerationRef,
     PoliteClient,
     SourceConnector,
     SourceExhausted,
@@ -24,7 +23,7 @@ from carid.collector.labeler import infer_label
 from carid.collector.sources import CONNECTOR_CLASSES
 from carid.config import Settings
 from carid.engine import Engine, ReferenceLabel, SourceInfo
-from carid.models import Make, SeenUrl, VehicleModel
+from carid.models import Make, SeenUrl
 from carid.vision.imageio import ImageDecodeError
 
 log = logging.getLogger(__name__)
@@ -61,7 +60,7 @@ def make_http(settings: Settings) -> PoliteClient:
 def build_targets(session: Session, make_ids: list[int] | None = None,
                   model_ids: list[int] | None = None) -> list[Target]:
     stmt = select(Make).options(
-        selectinload(Make.models).selectinload(VehicleModel.generations)).order_by(Make.name)
+        selectinload(Make.models)).order_by(Make.name)
     if make_ids:
         stmt = stmt.where(Make.id.in_(make_ids))
     targets: list[Target] = []
@@ -73,9 +72,6 @@ def build_targets(session: Session, make_ids: list[int] | None = None,
             targets.append(Target(
                 make_id=make.id, make=make.name, make_aliases=list(make.aliases),
                 model_id=model.id, model=model.name, model_aliases=list(model.aliases),
-                year_start=model.year_start, year_end=model.year_end,
-                generations=[GenerationRef(g.id, g.name, g.year_start, g.year_end)
-                             for g in model.generations],
                 sibling_models=siblings,
             ))
     return targets
@@ -170,7 +166,7 @@ class Collector:
 
     def _process(self, connector: SourceConnector, target: Target, cand: Any,
                  counters: Counter[str]) -> tuple[str, int | None]:
-        guess = infer_label(cand.text, target, cand.preset_year, title=cand.title or None)
+        guess = infer_label(cand.text, target, title=cand.title or None)
         if guess is None:
             return "label_mismatch", None
         if guess.interior_hint is False:
@@ -183,11 +179,8 @@ class Collector:
         except (FetchError, OSError) as exc:
             log.debug("fetch failed %s: %s", cand.url, exc)
             return "fetch_error", None
-        label = ReferenceLabel(
-            make_id=target.make_id, model_id=target.model_id,
-            year_start=guess.year_start, year_end=guess.year_end,
-            generation_id=guess.generation_id, confidence=guess.confidence,
-        )
+        label = ReferenceLabel(make_id=target.make_id, model_id=target.model_id,
+                               confidence=guess.confidence)
         info = SourceInfo(source=connector.name, source_url=cand.url[:1000],
                           page_url=(cand.page_url or "")[:1000] or None, license=cand.license,
                           credit=cand.credit, title=cand.title)
@@ -199,9 +192,8 @@ class Collector:
 
 
 def recheck_titles(engine: Engine, actor: str = "recheck") -> list[tuple[int, str]]:
-    """Reject stored images whose title names the make but a different model, or only
-    states years outside the model's covered range (e.g. a 1967 Malibu)."""
-    from carid.collector.labeler import title_out_of_scope, title_verdict
+    """Reject stored images whose title names the make but a different model."""
+    from carid.collector.labeler import title_verdict
     from carid.models import Image, ReviewStatus
 
     with engine.db.session() as s:
@@ -210,8 +202,7 @@ def recheck_titles(engine: Engine, actor: str = "recheck") -> list[tuple[int, st
             Image.review_status != ReviewStatus.rejected, Image.title.is_not(None))).all()
     bad = [(iid, title) for iid, model_id, title in rows
            if title and model_id in targets
-           and (title_verdict(title, targets[model_id]) == "other"
-                or title_out_of_scope(title, targets[model_id]))]
+           and title_verdict(title, targets[model_id]) == "other"]
     for iid, _ in bad:
         engine.set_review_status(iid, ReviewStatus.rejected, actor)
     engine.save_index()

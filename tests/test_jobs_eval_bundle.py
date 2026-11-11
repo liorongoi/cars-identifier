@@ -72,8 +72,8 @@ def test_running_jobs_requeued_on_start(engine: Engine) -> None:
 
 
 def test_split_holdout_keeps_training_images() -> None:
-    labels = {i: Label(i, 1, i % 3, None, 2010, 2010) for i in range(30)}
-    labels[99] = Label(99, 1, 7, None, None, None)  # singleton class never tested
+    labels = {i: Label(i, 1, i % 3) for i in range(30)}
+    labels[99] = Label(99, 1, 7)  # singleton class never tested
     test = split_holdout(labels, 0.5, 100, seed=1)
     assert 99 not in test
     for model in range(3):
@@ -129,7 +129,7 @@ def test_services_collect_job_uses_folder(settings: Settings, engine: Engine) ->
 
 
 def test_split_holdout_never_splits_a_group() -> None:
-    labels = {i: Label(i, 1, 1, None, 2010, 2010) for i in range(12)}
+    labels = {i: Label(i, 1, 1) for i in range(12)}
     groups = {i: f"photographer{i // 4}" for i in range(12)}  # 3 groups of 4
     for seed in range(5):
         test = set(split_holdout(labels, 0.4, 100, seed, groups=groups))

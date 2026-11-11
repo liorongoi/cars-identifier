@@ -36,15 +36,15 @@ def test_ingest_dedup_and_rejections(engine: Engine) -> None:
         engine.ingest(b"garbage", label, src)
 
 
-def test_ingest_stores_by_make_model_year_and_resolves_generation(engine: Engine) -> None:
+def test_ingest_stores_by_make_and_model(engine: Engine) -> None:
     key = "Alpha/Roadster/2010"
     res = engine.ingest(to_jpeg(draw_interior(CLASS_STYLES[key], np.random.default_rng(2))),
                         label_for(engine, key), SourceInfo("test"), interior_score=0.9)
     with engine.db.session() as s:
         im = s.get(Image, res.image_id)
         assert im is not None
-        assert im.path.startswith("alpha/roadster/2010/")
-        assert im.generation is not None and im.generation.name == "R2"
+        assert im.path.startswith("alpha/roadster/") and im.path.count("/") == 2
+        assert im.year_start is None and im.generation_id is None
         assert im.indexed and {p.part for p in im.parts} >= {"whole", "steering_wheel"}
     assert (engine.settings.images_dir / im.path).is_file()
 
@@ -84,7 +84,7 @@ def test_identify_result_contents_and_audit(populated: Engine) -> None:
     assert res["id"] > 0 and res["duration_ms"] >= 0
     c = res["candidates"][0]
     assert c["rank"] == 1 and c["make"] == "Beta" and c["model"] == "City"
-    assert c["generation"] == "C2" and c["year_start"] == 2010 and c["year_end"] is None
+    assert "year_start" not in c and "generation" not in c
     assert abs(sum(x["probability"] for x in res["candidates"]) - 1) < 0.05 or \
         len(res["candidates"]) == 10
     assert {p["part"] for p in res["parts"]} >= {"whole", "steering_wheel"}
@@ -140,8 +140,7 @@ def test_relabel_moves_file(populated: Engine) -> None:
     populated.relabel(image_id, new, "curator")
     with populated.db.session() as s:
         im = s.get(Image, image_id)
-        assert im is not None and im.path.startswith("beta/cruiser/2018/")
-        assert im.generation is not None and im.generation.name == "X1"
+        assert im is not None and im.path.startswith("beta/cruiser/")
     assert (populated.settings.images_dir / im.path).is_file()
     assert not (populated.settings.images_dir / old_path).exists()
 

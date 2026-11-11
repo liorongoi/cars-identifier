@@ -7,7 +7,7 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from carid.collector.base import GenerationRef, Target
+from carid.collector.base import Target
 from carid.collector.labeler import infer_label
 from carid.config import Settings
 from carid.db import Database
@@ -121,25 +121,27 @@ def test_wikidata_spec_parsing() -> None:
 def _target() -> Target:
     return Target(
         make_id=1, make="Toyota", make_aliases=[], model_id=2, model="Corolla",
-        model_aliases=[], year_start=1996, year_end=None,
-        generations=[GenerationRef(10, "E170", 2013, 2019), GenerationRef(11, "E210", 2018, None)],
-        sibling_models=["Corolla", "Camry", "RAV4", "Yaris"],
+        model_aliases=[], sibling_models=["Corolla", "Camry", "RAV4", "Yaris"],
     )
 
 
-@pytest.mark.parametrize(("text", "expect"), [
-    ("2017 Toyota Corolla interior", {"year_start": 2017, "interior_hint": True}),
-    ("Toyota Corolla E210 dashboard", {"generation_id": 11, "year_start": 2018}),
-    ("Toyota Corolla 2014-2016 cockpit", {"year_start": 2014, "year_end": 2016}),
-    ("Toyota Corolla 2014–16 cockpit", {"year_start": 2014, "year_end": 2016}),
-    ("Toyota Corolla seen from the side, exterior", {"interior_hint": False}),
-    ("toyota corolla", {"year_start": None, "interior_hint": None}),
+@pytest.mark.parametrize(("text", "hint"), [
+    ("2017 Toyota Corolla interior", True),
+    ("Toyota Corolla dashboard", True),
+    ("Toyota Corolla seen from the side, exterior", False),
+    ("toyota corolla", None),
 ])
-def test_infer_label(text: str, expect: dict[str, object]) -> None:
+def test_infer_label(text: str, hint: bool | None) -> None:
     guess = infer_label(text, _target())
-    assert guess is not None
-    for k, v in expect.items():
-        assert getattr(guess, k) == v, (k, guess)
+    assert guess is not None and guess.interior_hint == hint
+
+
+def test_any_model_year_is_accepted() -> None:
+    t = _target()
+    old = infer_label("1987 Toyota Corolla interior", t)
+    new = infer_label("2021 Toyota Corolla interior", t)
+    assert old is not None and new is not None
+    assert old.confidence == new.confidence  # years play no role
 
 
 def test_infer_label_rejects_and_penalises() -> None:
@@ -149,42 +151,36 @@ def test_infer_label_rejects_and_penalises() -> None:
     mixed = infer_label("2015 Toyota Corolla vs Camry interior", t)
     assert clean is not None and mixed is not None
     assert mixed.confidence < clean.confidence
-    assert infer_label("Toyota Corolla interior 1950", t) is None  # out of covered years
-    preset = infer_label("Toyota Corolla", t, preset_year=2020)
-    assert preset is not None and preset.year_start == 2020
 
 
 def test_short_model_names_need_word_boundaries() -> None:
     t = Target(make_id=1, make="Audi", make_aliases=[], model_id=1, model="A3",
-               model_aliases=[], year_start=1996, year_end=None)
+               model_aliases=[])
     assert infer_label("Audi A3 interior", t) is not None
     assert infer_label("Audi A35 interior", t) is None
 
 
 def test_plain_word_model_names_need_the_make() -> None:
     t = Target(make_id=1, make="Ford", make_aliases=[], model_id=1, model="Focus",
-               model_aliases=[], year_start=1998, year_end=None,
-               sibling_models=["Focus", "Fiesta"])
+               model_aliases=[], sibling_models=["Focus", "Fiesta"])
     assert infer_label("2015 Ford Focus interior", t) is not None
     assert infer_label("Ford Fiesta interior, shallow focus", t) is None
     assert infer_label("refocused dashboard photo", t) is None
     assert infer_label("Interior of a Focus ST (Ford), 2016", t) is not None
     assert infer_label("Interior of a Focus ST, 2016", t) is None  # make never named
     fiesta = Target(make_id=1, make="Ford", make_aliases=[], model_id=2, model="Fiesta",
-                    model_aliases=[], year_start=1995, year_end=None,
-                    sibling_models=["Focus", "Fiesta"])
+                    model_aliases=[], sibling_models=["Focus", "Fiesta"])
     clean = infer_label("2012 Ford Fiesta interior, shallow focus", fiesta)
     assert clean is not None and "also mentions" not in clean.reason
-    # Code-like names stand alone and tolerate punctuation.
     crv = Target(make_id=1, make="Honda", make_aliases=[], model_id=3, model="CR-V",
-                 model_aliases=[], year_start=1995, year_end=None)
+                 model_aliases=[])
     assert infer_label("CRV dashboard 2018", crv) is not None
     assert infer_label("CR V dashboard 2018", crv) is not None
 
 
 def test_title_outranks_tags() -> None:
     t = Target(make_id=1, make="Audi", make_aliases=[], model_id=1, model="A1",
-               model_aliases=[], year_start=2010, year_end=None)
+               model_aliases=[])
     tags = "audi a1 interior dashboard"
     assert infer_label(f"AUDI R8 V10 SPYDER {tags}", t, title="AUDI R8 V10 SPYDER") is None
     assert infer_label(f"Audi S3 interior {tags}", t, title="Audi S3 interior") is None
@@ -195,19 +191,8 @@ def test_title_outranks_tags() -> None:
     assert "only in tags" in by_tags.reason
 
 
-def test_out_of_scope_years_and_model_numbers() -> None:
-    from carid.collector.labeler import title_out_of_scope
-
-    t = _target()  # Corolla, generations E170 (2013) and E210 (2018-)
-    assert infer_label("1987 Toyota Corolla interior", t) is None
-    assert infer_label("1987 Toyota Corolla interior", t, preset_year=2015) is not None
-    ok = infer_label("2015 Toyota Corolla interior (my 1987 one was nicer)", t)
-    assert ok is not None and ok.year_start == 2015
-    assert title_out_of_scope("1984 Toyota Corolla KE70", t)
-    assert not title_out_of_scope("Toyota Corolla interior", t)
+def test_model_numbers_are_model_names() -> None:
     p = Target(make_id=1, make="Peugeot", make_aliases=[], model_id=1, model="2008",
-               model_aliases=[], year_start=2013, year_end=None,
-               generations=[GenerationRef(1, "A94", 2013, 2019)], sibling_models=["2008", "3008"])
-    assert not title_out_of_scope("Prueba Peugeot 2008 1.2 PureTech", p)
-    g = infer_label("Peugeot 2008 interior 2016", p)
-    assert g is not None and g.year_start == 2016
+               model_aliases=[], sibling_models=["2008", "3008"])
+    assert infer_label("Prueba Peugeot 2008 1.2 PureTech", p) is not None
+    assert infer_label("Peugeot 3008 interior", p) is None

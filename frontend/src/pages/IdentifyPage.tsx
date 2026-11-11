@@ -23,8 +23,6 @@ export function IdentifyPage() {
   const [maskFaces, setMaskFaces] = useState(true);
   const [mode, setMode] = useState("");
   const [makeIds, setMakeIds] = useState<number[]>([]);
-  const [yearMin, setYearMin] = useState("");
-  const [yearMax, setYearMax] = useState("");
   const [manual, setManual] = useState<{ part: string; bbox: BBox }[]>([]);
   const [drawPart, setDrawPart] = useState<string | null>(null);
   const [pickPart, setPickPart] = useState(DRAWABLE[0] ?? "steering_wheel");
@@ -73,8 +71,6 @@ export function IdentifyPage() {
         maskFaces,
         mode: mode || undefined,
         makeIds,
-        yearMin: yearMin ? Number(yearMin) : undefined,
-        yearMax: yearMax ? Number(yearMax) : undefined,
         manualParts: manual,
         caseRef: caseRef || undefined,
         analyst: analyst || undefined,
@@ -85,7 +81,7 @@ export function IdentifyPage() {
     } finally {
       setBusy(false);
     }
-  }, [file, topK, enhance, maskFaces, mode, makeIds, yearMin, yearMax, manual, caseRef, analyst]);
+  }, [file, topK, enhance, maskFaces, mode, makeIds, manual, caseRef, analyst]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -214,16 +210,6 @@ export function IdentifyPage() {
                   ))}
                 </select>
               </label>
-              <div className="row" style={{ gap: 8 }}>
-                <label className="field" style={{ flex: 1 }}>
-                  Year from
-                  <input type="number" min={1980} max={2100} value={yearMin} onChange={(e) => setYearMin(e.target.value)} />
-                </label>
-                <label className="field" style={{ flex: 1 }}>
-                  Year to
-                  <input type="number" min={1980} max={2100} value={yearMax} onChange={(e) => setYearMax(e.target.value)} />
-                </label>
-              </div>
             </div>
           </div>
 
@@ -279,7 +265,7 @@ export function IdentifyPage() {
             <div className="panel">
               <div className="empty">
                 <div style={{ fontSize: 40, opacity: 0.6 }}>◎</div>
-                Results will appear here: ranked candidates with probability, year range, reference-image counts and visual evidence.
+                Results will appear here: ranked make and model candidates with probability, reference-image counts and visual evidence.
               </div>
             </div>
           )}

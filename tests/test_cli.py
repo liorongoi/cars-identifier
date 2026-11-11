@@ -33,8 +33,8 @@ def test_cli_end_to_end(env: Settings, tmp_path: Path) -> None:
     # Import folder layout and collect from it.
     rng = np.random.default_rng(0)
     for key, style in CLASS_STYLES.items():
-        make, model, year = key.split("/")
-        d = tmp_path / "imports" / make / model / year
+        make, model, _ = key.split("/")
+        d = tmp_path / "imports" / make / model
         d.mkdir(parents=True)
         for i in range(3):
             (d / f"{i}.jpg").write_bytes(to_jpeg(draw_interior(style, rng)))

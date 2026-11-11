@@ -22,7 +22,6 @@ from carid.matcher import ClassScore, Label, MatchParams, Mode, make_probabiliti
 from carid.models import (
     AuditEvent,
     Benchmark,
-    Generation,
     Identification,
     Image,
     ImagePart,
@@ -30,7 +29,7 @@ from carid.models import (
     ReviewStatus,
     VehicleModel,
 )
-from carid.taxonomy import resolve_generation, slugify
+from carid.taxonomy import slugify
 from carid.vision.embed import Embedder, Vectors, get_embedder
 from carid.vision.enhance import enhance
 from carid.vision.faces import FaceDetector, mask_regions
@@ -64,11 +63,10 @@ class Analysis:
 
 @dataclass
 class ReferenceLabel:
+    """What a reference image shows: make and model (years are not identified)."""
+
     make_id: int
     model_id: int
-    year_start: int | None = None
-    year_end: int | None = None
-    generation_id: int | None = None
     confidence: float = 0.5
 
 
@@ -96,8 +94,6 @@ class IdentifyOptions:
     mask_faces: bool = True
     mode: Mode | None = None
     make_ids: list[int] | None = None
-    year_min: int | None = None
-    year_max: int | None = None
     manual_parts: list[dict[str, Any]] = field(default_factory=list)
     case_ref: str | None = None
     analyst: str | None = None
@@ -167,8 +163,7 @@ class Engine:
             if self._labels_version != self._version:
                 with self.db.session() as s:
                     rows = s.execute(
-                        select(Image.id, Image.make_id, Image.model_id, Image.generation_id,
-                               Image.year_start, Image.year_end)
+                        select(Image.id, Image.make_id, Image.model_id)
                         .where(Image.review_status != ReviewStatus.rejected)
                     ).all()
                 self._labels = {r[0]: Label(*r) for r in rows}
@@ -270,8 +265,6 @@ class Engine:
             softmax_temperature=self.settings.softmax_temperature,
             part_weights=self.settings.part_weights,
             make_ids=set(opts.make_ids) if opts.make_ids else None,
-            year_min=opts.year_min,
-            year_max=opts.year_max,
         )
         with self.index.lock:
             return rank(analysis.vectors, self.index, self.labels(), params)
@@ -299,8 +292,7 @@ class Engine:
                 query_path=query_path, duration_ms=duration_ms, result=result,
                 options={"top_k": opts.top_k, "enhance": opts.enhance,
                          "mask_faces": opts.mask_faces, "mode": opts.mode,
-                         "make_ids": opts.make_ids, "year_min": opts.year_min,
-                         "year_max": opts.year_max,
+                         "make_ids": opts.make_ids,
                          "manual_parts": opts.manual_parts},
             )
             s.add(ident)
@@ -312,14 +304,11 @@ class Engine:
     def _build_result(self, s: Session, analysis: Analysis, ranked: list[ClassScore],
                       top_k: int) -> dict[str, Any]:
         top = ranked[:top_k]
-        model_ids = {c.key[0] for c in top}
-        gen_ids = {c.key[1] for c in top if c.key[1] is not None}
+        model_ids = {c.key for c in top}
         models = {m.id: m for m in s.scalars(select(VehicleModel).where(
             VehicleModel.id.in_(model_ids)))} if model_ids else {}
         makes = {m.id: m for m in s.scalars(select(Make))}
-        gens = {g.id: g for g in s.scalars(select(Generation).where(
-            Generation.id.in_(gen_ids)))} if gen_ids else {}
-        counts = self.class_image_counts(s, [c.key for c in top])
+        counts = self.class_image_counts(s, [c.key for c in top])  # per model
         evidence_ids = {e.image_id for c in top for e in c.evidence}
         ev_images = {i.id: i for i in s.scalars(select(Image).where(
             Image.id.in_(evidence_ids)))} if evidence_ids else {}
@@ -328,16 +317,7 @@ class Engine:
 
         candidates = []
         for i, c in enumerate(top, start=1):
-            model = models.get(c.key[0])
-            gen = gens.get(c.key[1]) if c.key[1] else None
-            y0: int | None
-            y1: int | None
-            if gen is not None:
-                y0, y1 = gen.year_start, gen.year_end
-            elif c.year_min is not None:
-                y0, y1 = c.year_min, c.year_max
-            else:
-                y0, y1 = (model.year_start, model.year_end) if model else (None, None)
+            model = models.get(c.key)
             evidence = []
             for e in sorted(c.evidence, key=lambda e: -c.part_scores.get(e.part, 0)):
                 im = ev_images.get(e.image_id)
@@ -354,12 +334,8 @@ class Engine:
                 "rank": i,
                 "make_id": c.make_id,
                 "make": makes[c.make_id].name if c.make_id in makes else "?",
-                "model_id": c.key[0],
+                "model_id": c.key,
                 "model": model.name if model else "?",
-                "generation_id": c.key[1],
-                "generation": gen.name if gen else None,
-                "year_start": y0,
-                "year_end": y1,
                 "probability": round(c.probability, 4),
                 "confidence": _confidence_band(c.probability),
                 "score": round(c.score, 5),
@@ -393,17 +369,17 @@ class Engine:
             "created_at": datetime.now(UTC).isoformat(),
         }
 
-    def class_image_counts(self, s: Session,
-                           keys: list[tuple[int, int | None]]) -> dict[tuple[int, int | None], int]:
-        if not keys:
+    def class_image_counts(self, s: Session, model_ids: list[int]) -> dict[int, int]:
+        """Usable reference images per model."""
+        if not model_ids:
             return {}
         rows = s.execute(
-            select(Image.model_id, Image.generation_id, func.count())
-            .where(Image.model_id.in_({k[0] for k in keys}),
+            select(Image.model_id, func.count())
+            .where(Image.model_id.in_(set(model_ids)),
                    Image.review_status != ReviewStatus.rejected)
-            .group_by(Image.model_id, Image.generation_id)
+            .group_by(Image.model_id)
         ).all()
-        return {(m, g): int(n) for m, g, n in rows}
+        return {m: int(n) for m, n in rows}
 
     # ---------------------------------------------------------------- ingest
 
@@ -449,13 +425,7 @@ class Engine:
                 model = s.get(VehicleModel, label.model_id)
                 if model is None or model.make_id != label.make_id:
                     raise ValueError("label model does not belong to label make")
-                gen_id = label.generation_id
-                if gen_id is None:
-                    gen = resolve_generation(model, label.year_start, label.year_end)
-                    gen_id = gen.id if gen else None
-                year_dir = (str(label.year_start) if label.year_start else "unknown-year")
-                rel = Path(slugify(model.make.name)) / slugify(model.name) / year_dir / \
-                    f"{sha[:20]}.jpg"
+                rel = Path(slugify(model.make.name)) / slugify(model.name) / f"{sha[:20]}.jpg"
                 dest = self.settings.images_dir / rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 tmp = dest.with_suffix(".part")
@@ -464,8 +434,7 @@ class Engine:
                 image = Image(
                     sha256=sha, phash=phash, path=rel.as_posix(),
                     width=int(stored.shape[1]), height=int(stored.shape[0]),
-                    make_id=label.make_id, model_id=label.model_id, generation_id=gen_id,
-                    year_start=label.year_start, year_end=label.year_end or label.year_start,
+                    make_id=label.make_id, model_id=label.model_id,
                     label_confidence=label.confidence, source=source.source,
                     source_url=source.source_url, page_url=source.page_url,
                     license=source.license, credit=source.credit,
@@ -512,9 +481,7 @@ class Engine:
                     if iid in labels and iid not in exclude]
             if len(rows) < 4:
                 continue
-            classes: list[object] = [
-                (labels[int(image_ids[i])].model_id, labels[int(image_ids[i])].generation_id)
-                for i in rows]
+            classes: list[object] = [labels[int(image_ids[i])].model_id for i in rows]
             adapter = fit_lda(vecs[rows], classes, shrinkage=self.settings.adapter_shrinkage)
             if adapter is not None:
                 out[part] = adapter
@@ -576,7 +543,7 @@ class Engine:
         self.invalidate_labels()
 
     def relabel(self, image_id: int, label: ReferenceLabel, actor: str | None) -> None:
-        """Change an image's label; the file moves to its new Make/Model/Year folder."""
+        """Change an image's label; the file moves to its new Make/Model folder."""
         with self.db.session() as s:
             image = s.get(Image, image_id)
             model = s.get(VehicleModel, label.model_id)
@@ -584,15 +551,8 @@ class Engine:
                 raise KeyError(image_id)
             if model is None or model.make_id != label.make_id:
                 raise ValueError("label model does not belong to label make")
-            old = {"make_id": image.make_id, "model_id": image.model_id,
-                   "year_start": image.year_start, "year_end": image.year_end}
-            gen_id = label.generation_id
-            if gen_id is None:
-                gen = resolve_generation(model, label.year_start, label.year_end)
-                gen_id = gen.id if gen else None
-            year_dir = str(label.year_start) if label.year_start else "unknown-year"
-            rel = Path(slugify(model.make.name)) / slugify(model.name) / year_dir / \
-                Path(image.path).name
+            old = {"make_id": image.make_id, "model_id": image.model_id}
+            rel = Path(slugify(model.make.name)) / slugify(model.name) / Path(image.path).name
             if rel.as_posix() != image.path:
                 src = self.settings.images_dir / image.path
                 dest = self.settings.images_dir / rel
@@ -600,15 +560,11 @@ class Engine:
                 if src.exists():
                     src.replace(dest)
                 image.path = rel.as_posix()
-            image.make_id, image.model_id, image.generation_id = (
-                label.make_id, label.model_id, gen_id)
-            image.year_start = label.year_start
-            image.year_end = label.year_end or label.year_start
+            image.make_id, image.model_id = label.make_id, label.model_id
             image.label_confidence = label.confidence
             s.add(AuditEvent(actor=actor, action="image.relabel", target=f"image:{image_id}",
                              details={"from": old, "to": {
-                                 "make_id": label.make_id, "model_id": label.model_id,
-                                 "year_start": label.year_start, "year_end": label.year_end}}))
+                                 "make_id": label.make_id, "model_id": label.model_id}}))
         self.invalidate_labels()
 
     def _reindex_one(self, image_id: int) -> None:

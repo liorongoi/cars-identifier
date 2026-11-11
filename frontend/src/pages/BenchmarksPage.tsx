@@ -5,7 +5,6 @@ import { Alert, Chip, formatDate, useLoad } from "../components/common";
 const LEVELS: { id: string; label: string }[] = [
   { id: "make", label: "Make" },
   { id: "model", label: "Model" },
-  { id: "model_year", label: "Model + year range" },
 ];
 
 function cellColor(v: number | undefined): string {

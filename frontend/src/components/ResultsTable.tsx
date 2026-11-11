@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { formatYears, imageUrl, PART_LABELS, pct, type BBox, type Candidate, type DetectedPart } from "../api";
+import { imageUrl, PART_LABELS, pct, type BBox, type Candidate, type DetectedPart } from "../api";
 import { Bar, Chip } from "./common";
 
 interface Props {
@@ -39,7 +39,6 @@ export function ResultsTable({ candidates, queryParts, imageSize, queryImg, onHo
         <tr>
           <th style={{ width: 52 }}>#</th>
           <th>Vehicle</th>
-          <th>Years</th>
           <th style={{ width: "26%" }}>Probability</th>
           <th>Confidence</th>
           <th className="right" title="Reference images in the database for this candidate">Ref. images</th>
@@ -51,7 +50,7 @@ export function ResultsTable({ candidates, queryParts, imageSize, queryImg, onHo
           const isOpen = open === c.rank;
           const parts = Object.entries(c.part_scores).sort((a, b) => b[1] - a[1]);
           return (
-            <Fragment key={`${c.model_id}-${c.generation_id ?? "x"}`}>
+            <Fragment key={c.model_id}>
               <tr
                 className={`clickable ${c.rank === 1 ? "top1" : ""} ${isOpen ? "open" : ""}`}
                 onClick={() => setOpen(isOpen ? null : c.rank)}
@@ -64,9 +63,7 @@ export function ResultsTable({ candidates, queryParts, imageSize, queryImg, onHo
                   <b>
                     {c.make} {c.model}
                   </b>
-                  <div className="gen">{c.generation ? `Generation ${c.generation}` : "Generation not resolved"}</div>
                 </td>
-                <td className="nowrap">{formatYears(c.year_start, c.year_end)}</td>
                 <td>
                   <div className="prob">
                     <Bar value={c.probability} />
@@ -94,7 +91,7 @@ export function ResultsTable({ candidates, queryParts, imageSize, queryImg, onHo
               </tr>
               {isOpen && (
                 <tr>
-                  <td colSpan={7} style={{ background: "#0d131d" }}>
+                  <td colSpan={6} style={{ background: "#0d131d" }}>
                     <div className="small muted" style={{ marginBottom: 8 }}>
                       Evidence: query part (left) against the closest reference image of this candidate (right).
                     </div>

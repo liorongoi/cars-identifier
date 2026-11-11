@@ -13,7 +13,7 @@ describe("ResultsTable", () => {
     expect(rows[1]).toHaveTextContent("Toyota Corolla");
     expect(rows[1]).toHaveTextContent("72.0%");
     expect(rows[1]).toHaveTextContent("48");
-    expect(rows[1]).toHaveTextContent("2018–present");
+    expect(rows[1]).not.toHaveTextContent("2018");
     expect(screen.getByText("Honda Civic")).toBeTruthy();
     // first candidate's evidence is open by default
     expect(screen.getByAltText("reference steering_wheel")).toHaveAttribute(

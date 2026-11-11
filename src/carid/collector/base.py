@@ -19,16 +19,8 @@ log = logging.getLogger(__name__)
 
 
 @dataclass
-class GenerationRef:
-    id: int
-    name: str
-    year_start: int
-    year_end: int | None
-
-
-@dataclass
 class Target:
-    """What to collect: one model of one make (all its years)."""
+    """What to collect: one model of one make (any year)."""
 
     make_id: int
     make: str
@@ -36,9 +28,6 @@ class Target:
     model_id: int
     model: str
     model_aliases: list[str]
-    year_start: int | None
-    year_end: int | None
-    generations: list[GenerationRef] = field(default_factory=list)
     sibling_models: list[str] = field(default_factory=list)  # other models of the make
 
     @property
@@ -56,7 +45,6 @@ class Candidate:
     credit: str | None = None
     extra_text: str = ""  # categories, captions, alt text — used for labelling
     local_path: str | None = None  # for local sources
-    preset_year: int | None = None  # when the source already knows the year
 
     @property
     def text(self) -> str:

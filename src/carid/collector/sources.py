@@ -36,9 +36,6 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".h
 def search_queries(target: Target) -> list[str]:
     base = f"{target.make} {target.model}"
     queries = [f"{base} interior", f"{base} dashboard", f"{base} cockpit"]
-    for g in target.generations:
-        if not g.name.lower().endswith(" gen") and g.name.lower() != "original":
-            queries.append(f"{base} {g.name} interior")
     for alias in target.model_aliases[:2]:
         queries.append(f"{target.make} {alias} interior")
     return list(dict.fromkeys(queries))
@@ -143,7 +140,7 @@ class WebPagesSource(SourceConnector):
         brochure_sites:
           enabled: true
           sites:
-            - {make: Toyota, model: Corolla, year: 2020, urls: ["https://..."], license: "..."}
+            - {make: Toyota, model: Corolla, urls: ["https://..."], license: "..."}
     """
 
     name = "brochure_sites"
@@ -175,12 +172,11 @@ class WebPagesSource(SourceConnector):
                     # When the site entry names the model, page context is enough for labelling.
                     context = " ".join(filter(None, [
                         f"{target.make} {site_model}" if site_model else "",
-                        str(site.get("year", "")), img["alt"], img["title"], parser.title,
+                        img["alt"], img["title"], parser.title,
                     ]))
                     yield Candidate(url=url, page_url=page_url, title=img["alt"] or parser.title,
                                     extra_text=context, license=site.get("license"),
-                                    credit=site.get("credit"),
-                                    preset_year=site.get("year"))
+                                    credit=site.get("credit"))
                     count += 1
                     if count >= limit:
                         return
@@ -190,13 +186,13 @@ class WebPagesSource(SourceConnector):
 
 
 class FolderSource(SourceConnector):
-    """Import from a local folder laid out as ``<Make>/<Model>/<Year or Generation>/*``.
+    """Import from a local folder laid out as ``<Make>/<Model>/**`` (any sub-folders).
 
     PDFs (brochures) are expanded into their embedded images when PyMuPDF is installed.
     """
 
     name = "folder"
-    description = "Local folder import: <Make>/<Model>/<Year>/ images and brochure PDFs"
+    description = "Local folder import: <Make>/<Model>/ images and brochure PDFs"
 
     def _root(self) -> Path:
         return Path(str(self.config.get("path", "imports"))).expanduser()
@@ -217,18 +213,15 @@ class FolderSource(SourceConnector):
                 for f in sorted(model_dir.rglob("*")):
                     if not f.is_file():
                         continue
-                    sub = f.parent.relative_to(model_dir).as_posix()
-                    m = re.match(r"^(19|20)\d{2}$", sub.split("/")[0]) if sub != "." else None
-                    year = int(sub.split("/")[0]) if m else None
-                    text = f"{target.make} {target.model} {sub if sub != '.' else ''} {f.stem}"
+                    text = f"{target.make} {target.model} {f.stem}"
                     suffix = f.suffix.lower()
                     if suffix in IMAGE_SUFFIXES:
                         yield Candidate(url=f.resolve().as_uri(), local_path=str(f), title=f.stem,
-                                        extra_text=text, preset_year=year, license="local import",
+                                        extra_text=text, license="local import",
                                         credit=self.config.get("credit"))
                         count += 1
                     elif suffix == ".pdf":
-                        for cand in self._pdf_candidates(f, text, year):
+                        for cand in self._pdf_candidates(f, text):
                             yield cand
                             count += 1
                             if count >= limit:
@@ -236,7 +229,7 @@ class FolderSource(SourceConnector):
                     if count >= limit:
                         return
 
-    def _pdf_candidates(self, pdf: Path, text: str, year: int | None) -> Iterator[Candidate]:
+    def _pdf_candidates(self, pdf: Path, text: str) -> Iterator[Candidate]:
         try:
             import fitz  # PyMuPDF
         except ImportError:
@@ -247,8 +240,7 @@ class FolderSource(SourceConnector):
                 for img_no, info in enumerate(page.get_images(full=True)):
                     yield Candidate(url=f"{pdf.resolve().as_uri()}#p{page_no}i{img_no}",
                                     local_path=f"{pdf}::{info[0]}", title=f"{pdf.stem} p{page_no}",
-                                    extra_text=text, preset_year=year,
-                                    license="local brochure import")
+                                    extra_text=text, license="local brochure import")
 
     def fetch(self, candidate: Candidate) -> bytes:
         assert candidate.local_path is not None
@@ -320,12 +312,12 @@ class FlickrSource(SourceConnector):
 class VideoFramesSource(SourceConnector):
     """Frames sampled from video files the owner supplies (movies, clips). Opt-in.
 
-    Layout: ``<path>/<Make>/<Model>/<Year>/*.mp4``. Every ``every_seconds`` a frame
+    Layout: ``<path>/<Make>/<Model>/**/*.mp4``. Every ``every_seconds`` a frame
     is extracted; the interior filter discards non-interior frames during ingest.
     """
 
     name = "video_frames"
-    description = "Frames from movie/video files you supply, <Make>/<Model>/<Year>/ (opt-in)"
+    description = "Frames from movie/video files you supply, <Make>/<Model>/ (opt-in)"
     requires_legal_approval = True
     VIDEO_SUFFIXES = {".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm"}
 
@@ -345,14 +337,12 @@ class VideoFramesSource(SourceConnector):
                 for video in sorted(model_dir.rglob("*")):
                     if video.suffix.lower() not in self.VIDEO_SUFFIXES:
                         continue
-                    sub = video.parent.relative_to(model_dir).as_posix().split("/")[0]
-                    year = int(sub) if re.fullmatch(r"(19|20)\d{2}", sub) else None
                     for t in self._timestamps(video, every):
                         yield Candidate(url=f"{video.resolve().as_uri()}#t={t:.1f}",
                                         local_path=f"{video}::{t:.3f}",
                                         title=f"{video.stem} @ {t:.1f}s",
-                                        extra_text=f"{target.make} {target.model} {sub}",
-                                        preset_year=year, license="owner-supplied video")
+                                        extra_text=f"{target.make} {target.model}",
+                                        license="owner-supplied video")
                         count += 1
                         if count >= limit:
                             return
@@ -504,12 +494,11 @@ class OpenverseSource(SourceConnector):
 # --------------------------------------------------------------------------- manifest
 
 
-MANIFEST_FIELDS = ["url", "make", "model", "year_start", "year_end", "license", "credit",
-                   "page_url", "title", "source"]
+MANIFEST_FIELDS = ["url", "make", "model", "license", "credit", "page_url", "title", "source"]
 
 
 class ManifestSource(SourceConnector):
-    """Download images listed in CSV manifests (``url, make, model, year_start, ...``).
+    """Download images listed in CSV manifests (``url, make, model, license, ...``).
 
     Manifests hold links, labels and licences only, so a collection made on one machine
     (``carid export-manifest``) can be reproduced on another without searching again.
@@ -534,14 +523,12 @@ class ManifestSource(SourceConnector):
             if not (_phrase_in(row.get("make", ""), target.make)
                     and any(_phrase_in(row.get("model", ""), n) for n in names)):
                 continue
-            year = row.get("year_start") or ""
             yield Candidate(
                 url=row["url"], page_url=row.get("page_url") or None,
                 title=row.get("title") or "",
                 # Labels in a manifest are authoritative: state them explicitly for the labeler.
-                extra_text=f"{target.make} {target.model} interior {year}",
+                extra_text=f"{target.make} {target.model} interior",
                 license=row.get("license") or None, credit=row.get("credit") or None,
-                preset_year=int(year) if year.isdigit() else None,
             )
             count += 1
             if count >= limit:

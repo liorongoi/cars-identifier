@@ -19,10 +19,6 @@ export interface Candidate {
   make: string;
   model_id: number;
   model: string;
-  generation_id: number | null;
-  generation: string | null;
-  year_start: number | null;
-  year_end: number | null;
   probability: number;
   confidence: "high" | "medium" | "low";
   score: number;
@@ -104,25 +100,12 @@ export interface Stats {
   index: Record<string, number>;
 }
 
-export interface CatalogGeneration {
-  id: number;
-  name: string;
-  year_start: number;
-  year_end: number | null;
-  images: number;
-}
-
 export interface CatalogModel {
   id: number;
   name: string;
   aliases: string[];
-  year_start: number | null;
-  year_end: number | null;
   images: number;
   approved: number;
-  unknown_year: number;
-  years: Record<string, number>;
-  generations: CatalogGeneration[];
 }
 
 export interface CatalogMake {
@@ -146,9 +129,6 @@ export interface RefImage {
   model_id: number;
   make: string;
   model: string;
-  generation: string | null;
-  year_start: number | null;
-  year_end: number | null;
   label_confidence: number;
   source: string;
   page_url: string | null;
@@ -195,7 +175,7 @@ export interface HistoryItem {
   created_at: string;
   duration_ms: number;
   has_query_image: boolean;
-  top: { make: string; model: string; year_start: number | null; year_end: number | null; probability: number } | null;
+  top: { make: string; model: string; probability: number } | null;
   quality: string | null;
   feedback_model_id: number | null;
 }
@@ -280,8 +260,6 @@ export interface IdentifyParams {
   maskFaces: boolean;
   mode?: string;
   makeIds?: number[];
-  yearMin?: number;
-  yearMax?: number;
   manualParts?: { part: string; bbox: BBox }[];
   caseRef?: string;
   analyst?: string;
@@ -295,8 +273,6 @@ export function buildIdentifyForm(p: IdentifyParams): FormData {
   fd.append("mask_faces", String(p.maskFaces));
   if (p.mode) fd.append("mode", p.mode);
   if (p.makeIds?.length) fd.append("make_ids", p.makeIds.join(","));
-  if (p.yearMin) fd.append("year_min", String(p.yearMin));
-  if (p.yearMax) fd.append("year_max", String(p.yearMax));
   if (p.manualParts?.length) fd.append("manual_parts", JSON.stringify(p.manualParts));
   if (p.caseRef) fd.append("case_ref", p.caseRef);
   if (p.analyst) fd.append("analyst", p.analyst);
@@ -322,7 +298,7 @@ export const api = {
     }),
   catalog: () => request<Catalog>("/api/catalog"),
   addMake: (body: unknown) =>
-    request<{ make_id: number; existed: boolean; models_added: number; generations_added: number; jobs: number[] }>(
+    request<{ make_id: number; existed: boolean; models_added: number; jobs: number[] }>(
       "/api/catalog/makes",
       { method: "POST", ...json(body) },
     ),
@@ -354,13 +330,6 @@ export const imageUrl = (id: number, opts: { size?: number; bbox?: BBox | null }
   const qs = q.toString();
   return `/api/images/${id}/file${qs ? `?${qs}` : ""}`;
 };
-
-export function formatYears(start: number | null, end: number | null): string {
-  if (start === null && end === null) return "years unknown";
-  if (start !== null && end === null) return `${start}–present`;
-  if (start === end) return String(start);
-  return `${start ?? "?"}–${end ?? "?"}`;
-}
 
 export const pct = (p: number, digits = 1): string => `${(p * 100).toFixed(digits)}%`;
 

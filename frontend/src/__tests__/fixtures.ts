@@ -4,15 +4,15 @@ export const RESULT: IdentifyResult = {
   id: 7,
   candidates: [
     {
-      rank: 1, make_id: 1, make: "Toyota", model_id: 10, model: "Corolla", generation_id: 3, generation: "E210",
-      year_start: 2018, year_end: null, probability: 0.72, confidence: "high", score: 3.2,
+      rank: 1, make_id: 1, make: "Toyota", model_id: 10, model: "Corolla",
+      probability: 0.72, confidence: "high", score: 3.2,
       part_scores: { steering_wheel: 1.2, whole: 1.0, infotainment: 0.6 }, reference_images: 48,
       evidence: [{ part: "steering_wheel", similarity: 0.91, image_id: 55, bbox: [1, 2, 30, 40], source: "wikimedia",
         page_url: "https://commons.wikimedia.org/x", credit: "Jane", license: "CC BY-SA 4.0" }],
     },
     {
-      rank: 2, make_id: 2, make: "Honda", model_id: 20, model: "Civic", generation_id: null, generation: null,
-      year_start: 2016, year_end: 2021, probability: 0.18, confidence: "low", score: 0.8,
+      rank: 2, make_id: 2, make: "Honda", model_id: 20, model: "Civic",
+      probability: 0.18, confidence: "low", score: 0.8,
       part_scores: { whole: 0.8 }, reference_images: 3, evidence: [],
     },
   ],

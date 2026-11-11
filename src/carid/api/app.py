@@ -26,7 +26,6 @@ from carid.engine import IdentifyOptions, ReferenceLabel, SourceInfo
 from carid.models import (
     AuditEvent,
     Benchmark,
-    Generation,
     Identification,
     Image,
     Job,
@@ -36,7 +35,6 @@ from carid.models import (
 )
 from carid.services import Services
 from carid.taxonomy import (
-    GenerationSpec,
     MakeSpec,
     ModelSpec,
     catalog_tree,
@@ -131,8 +129,6 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         mask_faces: Annotated[bool, Form()] = True,
         mode: Annotated[str | None, Form()] = None,
         make_ids: Annotated[str | None, Form()] = None,
-        year_min: Annotated[int | None, Form()] = None,
-        year_max: Annotated[int | None, Form()] = None,
         manual_parts: Annotated[str | None, Form()] = None,
         case_ref: Annotated[str | None, Form(max_length=120)] = None,
         analyst: Annotated[str | None, Form(max_length=80)] = None,
@@ -144,7 +140,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         opts = IdentifyOptions(
             top_k=top_k, enhance=enhance, mask_faces=mask_faces,
             mode=mode or None,  # type: ignore[arg-type]
-            make_ids=_parse_ids(make_ids), year_min=year_min, year_max=year_max,
+            make_ids=_parse_ids(make_ids),
             manual_parts=_parse_manual_parts(manual_parts), case_ref=case_ref or None,
             analyst=analyst or None,
         )
@@ -169,8 +165,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                     "id": r.id, "case_ref": r.case_ref, "analyst": r.analyst,
                     "created_at": r.created_at.isoformat(), "duration_ms": r.duration_ms,
                     "has_query_image": r.query_path is not None,
-                    "top": top and {k: top[k] for k in ("make", "model", "year_start",
-                                                        "year_end", "probability")},
+                    "top": top and {k: top[k] for k in ("make", "model", "probability")},
                     "quality": (r.result.get("quality") or {}).get("verdict"),
                     "feedback_model_id": r.feedback_model_id,
                 })
@@ -223,11 +218,10 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                             headers={"Content-Disposition": f'attachment; filename="{name}.json"'})
         buf = io.StringIO()
         w = csv.writer(buf)
-        w.writerow(["rank", "make", "model", "generation", "year_start", "year_end",
-                    "probability", "confidence", "reference_images", "parts"])
+        w.writerow(["rank", "make", "model", "probability", "confidence", "reference_images",
+                    "parts"])
         for c in payload.get("candidates", []):
-            w.writerow([c["rank"], c["make"], c["model"], c.get("generation") or "",
-                        c.get("year_start") or "", c.get("year_end") or "", c["probability"],
+            w.writerow([c["rank"], c["make"], c["model"], c["probability"],
                         c["confidence"], c["reference_images"],
                         " ".join(sorted(c.get("part_scores", {})))])
         return Response(buf.getvalue(), media_type="text/csv",
@@ -241,10 +235,8 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         with engine.db.session() as s:
             makes = catalog_tree(s)
             rows = s.execute(
-                select(Image.model_id, Image.generation_id, Image.year_start, Image.year_end,
-                       Image.review_status, func.count())
-                .group_by(Image.model_id, Image.generation_id, Image.year_start,
-                          Image.year_end, Image.review_status)).all()
+                select(Image.model_id, Image.review_status, func.count())
+                .group_by(Image.model_id, Image.review_status)).all()
             return _catalog_payload(makes, list(rows))
 
     @app.post("/api/catalog/makes", status_code=201)
@@ -262,7 +254,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         jobs: list[int] = []
         with engine.db.session() as s:
             existed = find_make(s, body.name) is not None
-            make, models_added, gens_added = upsert_make(s, spec, added_by=actor)
+            make, models_added, _gens_added = upsert_make(s, spec, added_by=actor)
             make_id = make.id
             s.add(AuditEvent(actor=body.requested_by, action="make.add",
                              target=f"make:{make_id}",
@@ -279,14 +271,14 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 "make_ids": [make_id], "per_model_limit": body.per_model_limit},
                 requested_by=body.requested_by))
         return {"make_id": make_id, "existed": existed, "models_added": models_added,
-                "generations_added": gens_added, "jobs": jobs}
+                "jobs": jobs}
 
     @app.post("/api/catalog/models", status_code=201)
     def add_model(request: Request, body: AddModelIn) -> dict[str, Any]:
         services_ = svc(request)
         with services_.engine.db.session() as s:
             make = _get_or_404(s.get(Make, body.make_id), "make")
-            _, models_added, gens_added = upsert_make(
+            _, models_added, _gens_added = upsert_make(
                 s, MakeSpec(name=make.name, models=[_model_spec(body)]),
                 added_by=f"analyst:{body.requested_by or ''}")
             found = find_model(make, body.name)
@@ -300,13 +292,12 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 "model_ids": [model_id], "make_ids": [body.make_id],
                 "per_model_limit": body.per_model_limit}, requested_by=body.requested_by))
         return {"model_id": model_id, "models_added": models_added,
-                "generations_added": gens_added, "jobs": jobs}
+                "jobs": jobs}
 
     # ---------------------------------------------------------------- images
 
     @app.get("/api/images")
     def list_images(request: Request, make_id: int | None = None, model_id: int | None = None,
-                    generation_id: int | None = None, year: int | None = None,
                     status: str | None = None, source: str | None = None,
                     limit: int = Query(60, le=500), offset: int = 0) -> dict[str, Any]:
         with svc(request).engine.db.session() as s:
@@ -315,10 +306,6 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
                 stmt = stmt.where(Image.make_id == make_id)
             if model_id:
                 stmt = stmt.where(Image.model_id == model_id)
-            if generation_id:
-                stmt = stmt.where(Image.generation_id == generation_id)
-            if year:
-                stmt = stmt.where(Image.year_start <= year, Image.year_end >= year)
             if status:
                 stmt = stmt.where(Image.review_status == ReviewStatus(status))
             if source:
@@ -361,21 +348,15 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         engine = svc(request).engine
         with engine.db.session() as s:
             im = _get_or_404(s.get(Image, image_id), "image")
-            current = (im.make_id, im.model_id, im.year_start, im.year_end)
-        if body.model_id is not None or body.year_start is not None or body.make_id is not None:
-            model_id = body.model_id or current[1]
+            current_model = im.model_id
+        if body.model_id is not None or body.make_id is not None:
+            model_id = body.model_id or current_model
             with engine.db.session() as s:
                 model = _get_or_404(s.get(VehicleModel, model_id), "model")
                 make_id = model.make_id
             if body.make_id is not None and body.make_id != make_id:
                 raise HTTPException(422, "model does not belong to make")
-            ys = body.year_start if body.year_start is not None else current[2]
-            ye = body.year_end if body.year_end is not None else (
-                body.year_start if body.year_start is not None else current[3])
-            if ys is not None and ye is not None and ye < ys:
-                raise HTTPException(422, "year_end before year_start")
-            engine.relabel(image_id, ReferenceLabel(make_id, model_id, ys, ye, None, 1.0),
-                           body.actor)
+            engine.relabel(image_id, ReferenceLabel(make_id, model_id, 1.0), body.actor)
         if body.review_status is not None:
             engine.set_review_status(image_id, ReviewStatus(body.review_status), body.actor)
         engine.save_index()
@@ -386,8 +367,6 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
         request: Request,
         file: Annotated[UploadFile, File()],
         model_id: Annotated[int, Form()],
-        year_start: Annotated[int | None, Form(ge=1900, le=2100)] = None,
-        year_end: Annotated[int | None, Form(ge=1900, le=2100)] = None,
         license: Annotated[str | None, Form(max_length=200)] = None,
         credit: Annotated[str | None, Form(max_length=400)] = None,
         actor: Annotated[str | None, Form(max_length=80)] = None,
@@ -399,7 +378,7 @@ def create_app(settings: Settings | None = None, services: Services | None = Non
             make_id = model.make_id
         res = await run_in_threadpool(
             engine.ingest, data,
-            ReferenceLabel(make_id, model_id, year_start, year_end or year_start, None, 0.95),
+            ReferenceLabel(make_id, model_id, 0.95),
             SourceInfo("upload", license=license, credit=credit or actor, title=file.filename),
             interior_score=1.0, review_status=ReviewStatus.approved)
         await run_in_threadpool(engine.save_index)
@@ -546,19 +525,13 @@ def _safe_path(root: Path, rel: str) -> Path:
 
 
 def _model_spec(m: Any) -> ModelSpec:
-    return ModelSpec(name=m.name, aliases=m.aliases, year_start=m.year_start,
-                     year_end=m.year_end,
-                     generations=[GenerationSpec(g.name, g.year_start, g.year_end)
-                                  for g in m.generations])
+    return ModelSpec(name=m.name, aliases=m.aliases)
 
 
 def _image_dict(im: Image) -> dict[str, Any]:
     return {
         "id": im.id, "make_id": im.make_id, "model_id": im.model_id,
         "make": im.make.name, "model": im.model.name,
-        "generation_id": im.generation_id,
-        "generation": im.generation.name if im.generation else None,
-        "year_start": im.year_start, "year_end": im.year_end,
         "label_confidence": im.label_confidence, "source": im.source,
         "source_url": im.source_url, "page_url": im.page_url, "license": im.license,
         "credit": im.credit, "title": im.title, "width": im.width, "height": im.height,
@@ -580,48 +553,24 @@ def _job_dict(j: Job, with_log: bool) -> dict[str, Any]:
 
 
 def _catalog_payload(makes: list[Make], rows: list[Any]) -> dict[str, Any]:
-    """Build Make › Model › Generation/Year tree with image counts (FR-DB-3)."""
+    """Build the Make › Model tree with image counts (FR-DB-3)."""
     per_model: dict[int, int] = defaultdict(int)
     per_model_approved: dict[int, int] = defaultdict(int)
-    per_gen: dict[int, int] = defaultdict(int)
-    per_year: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    unknown_year: dict[int, int] = defaultdict(int)
-    for model_id, gen_id, ys, ye, status, n in rows:
+    for model_id, status, n in rows:
         if status == ReviewStatus.rejected:
             continue
         per_model[model_id] += n
         if status == ReviewStatus.approved:
             per_model_approved[model_id] += n
-        if gen_id is not None:
-            per_gen[gen_id] += n
-        if ys is None:
-            unknown_year[model_id] += n
-        else:
-            for y in range(ys, (ye or ys) + 1):
-                per_year[model_id][y] += n
     out_makes = []
     total = 0
     for make in makes:
-        models = []
-        make_total = 0
-        for m in make.models:
-            years = dict(sorted(per_year[m.id].items()))
-            models.append({
-                "id": m.id, "name": m.name, "aliases": m.aliases,
-                "year_start": m.year_start, "year_end": m.year_end,
-                "images": per_model[m.id], "approved": per_model_approved[m.id],
-                "unknown_year": unknown_year[m.id], "years": years,
-                "generations": [_gen_dict(g, per_gen[g.id]) for g in m.generations],
-            })
-            make_total += per_model[m.id]
+        models = [{"id": m.id, "name": m.name, "aliases": m.aliases,
+                   "images": per_model[m.id], "approved": per_model_approved[m.id]}
+                  for m in make.models]
+        make_total = sum(per_model[m.id] for m in make.models)
         total += make_total
         out_makes.append({"id": make.id, "name": make.name, "country": make.country,
                           "aliases": make.aliases, "added_by": make.added_by,
                           "images": make_total, "models": models})
     return {"total_images": total, "makes": out_makes}
-
-
-def _gen_dict(g: Generation, n: int) -> dict[str, Any]:
-    return {"id": g.id, "name": g.name, "year_start": g.year_start, "year_end": g.year_end,
-            "images": n}
-

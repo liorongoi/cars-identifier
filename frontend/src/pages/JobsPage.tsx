@@ -70,7 +70,7 @@ export function JobsPage() {
           </button>
           <button
             className="btn"
-            title="Learn which interior features separate car generations (seconds; re-run after large collections)"
+            title="Learn which interior features separate car models (seconds; re-run after large collections)"
             onClick={() => void start("train_adapter", {})}
           >
             Train adapter

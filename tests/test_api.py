@@ -40,8 +40,8 @@ def test_catalog_counts(client: TestClient) -> None:
     assert cat["total_images"] == 24
     beta = next(m for m in cat["makes"] if m["name"] == "Beta")
     city = next(m for m in beta["models"] if m["name"] == "City")
-    assert city["images"] == 6 and city["years"] == {"2012": 6} and city["approved"] == 6
-    assert next(g for g in city["generations"] if g["name"] == "C2")["images"] == 6
+    assert city["images"] == 6 and city["approved"] == 6
+    assert "years" not in city and "generations" not in city
 
 
 def test_identify_flow(client: TestClient) -> None:
@@ -95,7 +95,7 @@ def test_identify_with_filters(client: TestClient) -> None:
     cat = client.get("/api/catalog").json()
     alpha = next(m for m in cat["makes"] if m["name"] == "Alpha")
     r = client.post("/api/identify", files={"file": ("q.jpg", _img(), "image/jpeg")},
-                    data={"make_ids": str(alpha["id"]), "year_min": "2000", "year_max": "2030",
+                    data={"make_ids": str(alpha["id"]),
                           "enhance": "false", "mask_faces": "false", "mode": "global"})
     assert r.status_code == 200
     assert {c["make"] for c in r.json()["candidates"]} == {"Alpha"}
@@ -104,8 +104,7 @@ def test_identify_with_filters(client: TestClient) -> None:
 def test_add_make_manual_and_seeded(client: TestClient) -> None:
     r = client.post("/api/catalog/makes", json={
         "name": "Gamma", "country": "Nowhere", "requested_by": "dana",
-        "models": [{"name": "Hauler", "generations": [
-            {"name": "H1", "year_start": 2010, "year_end": 2018}]}]})
+        "models": [{"name": "Hauler"}]})
     assert r.status_code == 201, r.text
     body = r.json()
     assert not body["existed"] and body["models_added"] == 1 and len(body["jobs"]) == 1
@@ -116,7 +115,7 @@ def test_add_make_manual_and_seeded(client: TestClient) -> None:
     jobs = client.get("/api/jobs").json()
     assert {j["kind"] for j in jobs} == {"collect", "expand_make"}
     m = client.post("/api/catalog/models", json={
-        "make_id": body["make_id"], "name": "Van", "year_start": 2015, "collect": False})
+        "make_id": body["make_id"], "name": "Van", "collect": False})
     assert m.status_code == 201 and m.json()["models_added"] == 1
     assert client.post("/api/catalog/makes", json={"name": "  "}).status_code == 422
     assert client.post("/api/catalog/models", json={"make_id": 999, "name": "X"}).status_code \
@@ -124,7 +123,9 @@ def test_add_make_manual_and_seeded(client: TestClient) -> None:
 
 
 def test_images_browse_patch_upload(client: TestClient) -> None:
-    lst = client.get("/api/images", params={"year": 2012, "limit": 3}).json()
+    city_id = next(m["id"] for mk in client.get("/api/catalog").json()["makes"]
+                   for m in mk["models"] if m["name"] == "City")
+    lst = client.get("/api/images", params={"model_id": city_id, "limit": 3}).json()
     assert lst["total"] == 6 and len(lst["items"]) == 3
     img = lst["items"][0]
     detail = client.get(f"/api/images/{img['id']}").json()
@@ -138,16 +139,14 @@ def test_images_browse_patch_upload(client: TestClient) -> None:
     alpha = next(m for m in cat["makes"] if m["name"] == "Alpha")
     roadster = next(m for m in alpha["models"] if m["name"] == "Roadster")
     moved = client.patch(f"/api/images/{img['id']}", json={
-        "model_id": roadster["id"], "year_start": 2005}).json()
-    assert moved["model"] == "Roadster" and moved["generation"] == "R1"
-    assert client.patch(f"/api/images/{img['id']}", json={
-        "year_start": 2010, "year_end": 2005}).status_code == 422
+        "model_id": roadster["id"]}).json()
+    assert moved["model"] == "Roadster" and "year_start" not in moved
     assert client.patch(f"/api/images/{img['id']}", json={
         "model_id": roadster["id"], "make_id": 9999}).status_code == 422
     assert client.get("/api/images/99999").status_code == 404
     up = client.post("/api/images/upload",
                      files={"file": ("ref.jpg", _img("Alpha/Wagon/2016", 77), "image/jpeg")},
-                     data={"model_id": str(roadster["id"]), "year_start": "2019"})
+                     data={"model_id": str(roadster["id"])})
     assert up.status_code == 201 and up.json()["status"] == "added"
     bad_bbox = client.get(f"/api/images/{img['id']}/file", params={"bbox": "5,5,1,1"})
     assert bad_bbox.status_code == 422

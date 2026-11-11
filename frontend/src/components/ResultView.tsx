@@ -91,10 +91,7 @@ export function ResultView({ result, imageSrc, manual = [], drawPart = null, onD
                   </div>
                   <div className="row">
                     <Chip kind={top.confidence}>{top.confidence} confidence</Chip>
-                    {top.generation && <Chip>{top.generation}</Chip>}
-                    <span className="muted">
-                      {top.year_start ?? "?"}–{top.year_end ?? "present"}
-                    </span>
+                    <span className="muted">{top.reference_images} reference images</span>
                   </div>
                   <div className="prob">
                     <Bar value={top.probability} />
@@ -214,7 +211,7 @@ function Feedback({ result, analyst }: { result: IdentifyResult; analyst: string
           <option value="">Correct vehicle (if known)…</option>
           {result.candidates.map((c) => (
             <option key={c.rank} value={c.model_id}>
-              {c.make} {c.model} {c.generation ?? ""}
+              {c.make} {c.model}
             </option>
           ))}
         </select>

@@ -1,38 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatYears, imageUrl, pct, type CatalogMake, type CatalogModel, type RefImage } from "../api";
-import { Alert, Chip, Spinner, Stat, useAnalyst, useLoad } from "../components/common";
+import { api, imageUrl, pct, type CatalogMake, type CatalogModel, type RefImage } from "../api";
+import { Alert, Bar, Chip, Spinner, Stat, useAnalyst, useLoad } from "../components/common";
 
-const FIRST = 1996;
-const LAST = new Date().getFullYear();
-const YEARS = Array.from({ length: LAST - FIRST + 1 }, (_, i) => FIRST + i);
-
-function heatColor(n: number, max: number): string {
-  if (n <= 0) return "var(--bg-2)";
-  const t = Math.min(1, Math.log1p(n) / Math.log1p(Math.max(max, 10)));
-  return `rgba(56, 189, 248, ${0.18 + 0.82 * t})`;
-}
-
-function Heat({ model, max }: { model: CatalogModel; max: number }) {
-  const start = model.year_start ?? FIRST;
-  const end = model.year_end ?? LAST;
-  return (
-    <div className="heat" style={{ gridTemplateColumns: `repeat(${YEARS.length}, 1fr)` }} aria-label="images per year">
-      {YEARS.map((y) => {
-        const n = model.years[String(y)] ?? 0;
-        const inRange = y >= start && y <= end;
-        return (
-          <i
-            key={y}
-            className={inRange ? "" : "out"}
-            style={inRange ? { background: heatColor(n, max) } : undefined}
-            title={`${y}: ${n} image${n === 1 ? "" : "s"}${inRange ? "" : " (outside production years)"}`}
-          />
-        );
-      })}
-    </div>
-  );
-}
+/** Images per model at which the coverage bar is full (a practical target, not a limit). */
+const TARGET_PER_MODEL = 100;
 
 export function DatabasePage() {
   const catalog = useLoad(() => api.catalog(), []);
@@ -40,7 +12,6 @@ export function DatabasePage() {
   const [q, setQ] = useState("");
   const [gapsOnly, setGapsOnly] = useState(false);
   const [openMakes, setOpenMakes] = useState<Set<number>>(new Set());
-  const [openModels, setOpenModels] = useState<Set<number>>(new Set());
   const [browse, setBrowse] = useState<{ make: CatalogMake; model: CatalogModel } | null>(null);
   const [analyst] = useAnalyst();
   const [msg, setMsg] = useState<string | null>(null);
@@ -59,12 +30,6 @@ export function DatabasePage() {
       })
       .filter((m) => m.models.length > 0 || (!gapsOnly && (!term || m.name.toLowerCase().includes(term))));
   }, [catalog.data, q, gapsOnly]);
-
-  const maxPerYear = useMemo(() => {
-    let mx = 1;
-    for (const m of catalog.data?.makes ?? []) for (const md of m.models) for (const v of Object.values(md.years)) mx = Math.max(mx, v);
-    return mx;
-  }, [catalog.data]);
 
   const toggle = (set: Set<number>, id: number, fn: (s: Set<number>) => void) => {
     const n = new Set(set);
@@ -89,7 +54,7 @@ export function DatabasePage() {
       <div className="page-head">
         <div>
           <h1>Reference database</h1>
-          <p>Make › Model › Year, with the number of reference images collected for each.</p>
+          <p>Make › Model, with the number of reference interior images collected for each.</p>
         </div>
         <Link className="btn primary" to="/add">
           ＋ Add make / model
@@ -134,9 +99,6 @@ export function DatabasePage() {
             </div>
           )}
           {catalog.error && <Alert kind="bad">{catalog.error}</Alert>}
-          <div className="heat-axis" style={{ maxWidth: "none", padding: "6px 14px 0", justifyContent: "flex-end", gap: 12 }}>
-            <span>heat strip: {FIRST} → {LAST}, darker = more images; dashed = outside production</span>
-          </div>
           {makes.map((m) => {
             const open = openMakes.has(m.id) || !!q;
             const empty = m.models.filter((md) => md.images === 0).length;
@@ -163,42 +125,26 @@ export function DatabasePage() {
                   </button>
                 </div>
                 {open &&
-                  m.models.map((md) => {
-                    const mOpen = openModels.has(md.id);
-                    return (
-                      <div className="tree-model" key={md.id}>
-                        <div className="head" onClick={() => toggle(openModels, md.id, setOpenModels)}>
-                          <span className={`caret ${mOpen ? "open" : ""}`}>▸</span>
-                          <span style={{ minWidth: 150 }}>{md.name}</span>
-                          <span className="dim small nowrap" style={{ minWidth: 92 }}>
-                            {formatYears(md.year_start, md.year_end)}
-                          </span>
-                          <Heat model={md} max={maxPerYear} />
-                          <span className="spacer" />
-                          <span className={`count ${md.images === 0 ? "zero" : ""}`} title={`${md.approved} approved · ${md.unknown_year} without year`}>
-                            {md.images}
-                          </span>
+                  m.models.map((md) => (
+                    <div className="tree-model" key={md.id}>
+                      <div className="head" style={{ cursor: "default" }}>
+                        <span style={{ minWidth: 180 }}>{md.name}</span>
+                        <div style={{ flex: 1, maxWidth: 360 }}>
+                          <Bar value={Math.min(1, md.images / TARGET_PER_MODEL)} tone={md.images === 0 ? "bad" : md.images < 30 ? "warn" : "good"} />
                         </div>
-                        {mOpen && (
-                          <div className="gens">
-                            {md.generations.map((g) => (
-                              <Chip key={g.id} kind={g.images === 0 ? "bad" : g.images < 10 ? "warn" : "good"} title={`${g.images} images`}>
-                                {g.name} · {formatYears(g.year_start, g.year_end)} · {g.images}
-                              </Chip>
-                            ))}
-                            {md.unknown_year > 0 && <Chip>year unknown · {md.unknown_year}</Chip>}
-                            <span className="spacer" />
-                            <button className="btn sm" onClick={() => setBrowse({ make: m, model: md })}>
-                              Browse images
-                            </button>
-                            <button className="btn sm" onClick={() => void collect({ make_ids: [m.id], model_ids: [md.id] }, `${m.name} ${md.name}`)}>
-                              Collect more
-                            </button>
-                          </div>
-                        )}
+                        <span className="spacer" />
+                        <span className={`count ${md.images === 0 ? "zero" : ""}`} title={`${md.approved} approved by a curator`}>
+                          {md.images}
+                        </span>
+                        <button className="btn sm" onClick={() => setBrowse({ make: m, model: md })}>
+                          Browse
+                        </button>
+                        <button className="btn sm" onClick={() => void collect({ make_ids: [m.id], model_ids: [md.id] }, `${m.name} ${md.name}`)}>
+                          Collect more
+                        </button>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
               </div>
             );
           })}
@@ -237,11 +183,10 @@ function Gallery({
   onChanged: () => void;
 }) {
   const [status, setStatus] = useState("");
-  const [year, setYear] = useState("");
   const [offset, setOffset] = useState(0);
   const imgs = useLoad(
-    () => api.images({ model_id: model.id, status: status || undefined, year: year || undefined, limit: 48, offset }),
-    [model.id, status, year, offset],
+    () => api.images({ model_id: model.id, status: status || undefined, limit: 48, offset }),
+    [model.id, status, offset],
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -274,7 +219,6 @@ function Gallery({
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
-          <input type="number" placeholder="Year" value={year} onChange={(e) => (setOffset(0), setYear(e.target.value))} style={{ width: 100 }} aria-label="year" />
         </div>
         {error && <Alert kind="bad">{error}</Alert>}
         <div className="gallery">
@@ -286,7 +230,6 @@ function Gallery({
               <div className="meta">
                 <div className="row" style={{ gap: 4 }}>
                   <Chip kind={im.review_status}>{im.review_status}</Chip>
-                  <span className="dim">{formatYears(im.year_start, im.year_end)}</span>
                 </div>
                 <div className="dim" title={im.title ?? ""}>
                   {im.source} · label {pct(im.label_confidence, 0)}
@@ -303,15 +246,6 @@ function Gallery({
                       ✕
                     </button>
                   )}
-                  <button
-                    className="btn sm ghost"
-                    onClick={() => {
-                      const y = window.prompt("Correct model year (e.g. 2014):", String(im.year_start ?? ""));
-                      if (y && /^\d{4}$/.test(y)) void act(im, { year_start: Number(y), year_end: Number(y) });
-                    }}
-                  >
-                    year
-                  </button>
                   <select
                     className="small"
                     value=""

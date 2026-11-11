@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from carid.engine import Engine, ReferenceLabel, SourceInfo
-from carid.models import Image, Make, ReviewStatus, VehicleModel
-from carid.taxonomy import GenerationSpec, MakeSpec, ModelSpec, find_make, find_model, upsert_make
+from carid.models import Image, Make, ReviewStatus
+from carid.taxonomy import MakeSpec, ModelSpec, find_make, find_model, upsert_make
 
 FORMAT_VERSION = 1
 
@@ -22,22 +22,16 @@ FORMAT_VERSION = 1
 def export_bundle(engine: Engine, dest: Path) -> dict[str, int]:
     with engine.db.session() as s:
         makes = list(s.scalars(select(Make).options(
-            selectinload(Make.models).selectinload(VehicleModel.generations))))
+            selectinload(Make.models))))
         taxonomy = [{
             "name": m.name, "country": m.country, "aliases": m.aliases,
-            "models": [{"name": mod.name, "aliases": mod.aliases,
-                        "year_start": mod.year_start, "year_end": mod.year_end,
-                        "generations": [[g.name, g.year_start, g.year_end]
-                                        for g in mod.generations]}
-                       for mod in m.models],
+            "models": [{"name": mod.name, "aliases": mod.aliases} for mod in m.models],
         } for m in makes]
         images: list[dict[str, Any]] = []
         for im in s.scalars(select(Image).where(Image.review_status != ReviewStatus.rejected)):
             images.append({
                 "file": im.path, "sha256": im.sha256, "make": im.make.name,
                 "model": im.model.name,
-                "generation": im.generation.name if im.generation else None,
-                "year_start": im.year_start, "year_end": im.year_end,
                 "label_confidence": im.label_confidence, "source": im.source,
                 "source_url": im.source_url, "page_url": im.page_url, "license": im.license,
                 "credit": im.credit, "title": im.title, "interior_score": im.interior_score,
@@ -74,11 +68,7 @@ def import_bundle(engine: Engine, src: Path,
             for m in manifest["taxonomy"]:
                 upsert_make(s, MakeSpec(
                     name=m["name"], country=m.get("country"), aliases=m.get("aliases", []),
-                    models=[ModelSpec(name=mod["name"], aliases=mod.get("aliases", []),
-                                      year_start=mod.get("year_start"),
-                                      year_end=mod.get("year_end"),
-                                      generations=[GenerationSpec(*g) for g in
-                                                   mod.get("generations", [])])
+                    models=[ModelSpec(name=mod["name"], aliases=mod.get("aliases", []))
                             for mod in m.get("models", [])]), added_by="bundle")
         records = manifest["images"]
         for n, rec in enumerate(records, start=1):
@@ -96,10 +86,7 @@ def import_bundle(engine: Engine, src: Path,
                 if make is None or model is None:
                     counts["missing"] += 1
                     continue
-                gen_id = next((g.id for g in model.generations
-                               if g.name == rec.get("generation")), None)
-                label = ReferenceLabel(make.id, model.id, rec.get("year_start"),
-                                       rec.get("year_end"), gen_id,
+                label = ReferenceLabel(make.id, model.id,
                                        float(rec.get("label_confidence", 0.5)))
             res = engine.ingest(
                 file.read_bytes(), label,
@@ -129,10 +116,9 @@ def export_manifest(engine: Engine, dest: Path) -> int:
         w.writeheader()
         stmt = (select(Image).where(Image.review_status != ReviewStatus.rejected,
                                     Image.source_url.like("http%"))
-                .order_by(Image.make_id, Image.model_id, Image.year_start))
+                .order_by(Image.make_id, Image.model_id, Image.id))
         for im in s.scalars(stmt):
             w.writerow({"url": im.source_url, "make": im.make.name, "model": im.model.name,
-                        "year_start": im.year_start or "", "year_end": im.year_end or "",
                         "license": im.license or "", "credit": im.credit or "",
                         "page_url": im.page_url or "", "title": im.title or "",
                         "source": im.source})

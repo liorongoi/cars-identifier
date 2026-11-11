@@ -130,13 +130,13 @@ def engine(settings: Settings) -> Iterator[Engine]:
 
 
 def label_for(engine: Engine, key: str) -> ReferenceLabel:
-    make_name, model_name, year = key.split("/")
+    make_name, model_name, _ = key.split("/")  # key keeps a year only to name the style
     with engine.db.session() as s:
         make = find_make(s, make_name)
         assert make is not None
         model = find_model(make, model_name)
         assert model is not None
-        return ReferenceLabel(make.id, model.id, int(year), int(year), None, 0.9)
+        return ReferenceLabel(make.id, model.id, 0.9)
 
 
 @pytest.fixture

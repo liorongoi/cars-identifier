@@ -7,18 +7,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-class GenerationIn(BaseModel):
-    name: str = Field(min_length=1, max_length=80)
-    year_start: int = Field(ge=1900, le=2100)
-    year_end: int | None = Field(default=None, ge=1900, le=2100)
-
-
 class ModelIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     aliases: list[str] = Field(default_factory=list)
-    year_start: int | None = Field(default=None, ge=1900, le=2100)
-    year_end: int | None = Field(default=None, ge=1900, le=2100)
-    generations: list[GenerationIn] = Field(default_factory=list)
 
 
 class AddMakeIn(BaseModel):
@@ -58,8 +49,6 @@ class ImagePatch(BaseModel):
     review_status: Literal["pending", "approved", "rejected"] | None = None
     make_id: int | None = None
     model_id: int | None = None
-    year_start: int | None = Field(default=None, ge=1900, le=2100)
-    year_end: int | None = Field(default=None, ge=1900, le=2100)
     actor: str | None = Field(default=None, max_length=80)
 
 

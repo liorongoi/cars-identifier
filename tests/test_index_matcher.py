@@ -65,11 +65,11 @@ def _setup() -> tuple[IndexSet, dict[int, Label], np.ndarray]:
     for i in range(10):
         vecs.append(l2_normalize(base[0] + 0.3 * _vecs(1, dim, 10 + i)[0]))
         iids.append(i)
-        labels[i] = Label(i, 1, 1, None, 2010, 2012)
+        labels[i] = Label(i, 1, 1)
     for j in range(2):
         vecs.append(base[1])
         iids.append(100 + j)
-        labels[100 + j] = Label(100 + j, 2, 2, 7, 2015, 2015)
+        labels[100 + j] = Label(100 + j, 2, 2)
     arr = np.stack(vecs)
     for part in ("whole", "steering_wheel"):
         idx.add(part, np.arange(len(iids)) + (0 if part == "whole" else 1000), np.array(iids), arr)
@@ -80,9 +80,8 @@ def test_rank_prefers_best_match_not_volume() -> None:
     idx, labels, base = _setup()
     q = {"whole": base[1], "steering_wheel": base[1]}
     ranked = rank(q, idx, labels, MatchParams(votes_per_class=3))
-    assert ranked[0].key == (2, 7)
+    assert ranked[0].key == 2
     assert sum(c.probability for c in ranked) == pytest.approx(1.0)
-    assert ranked[0].year_min == 2015 and ranked[0].year_max == 2015
     assert {e.part for e in ranked[0].evidence} == {"whole", "steering_wheel"}
     probs = make_probabilities(ranked)
     assert next(iter(probs)) == 2
@@ -93,10 +92,6 @@ def test_rank_filters_and_modes() -> None:
     q = {"whole": base[1], "steering_wheel": base[1]}
     only_make1 = rank(q, idx, labels, MatchParams(make_ids={1}))
     assert {c.make_id for c in only_make1} == {1}
-    years = rank(q, idx, labels, MatchParams(year_min=2016))
-    assert all(c.key[0] != 2 for c in years)
-    years_max = rank(q, idx, labels, MatchParams(year_max=2009))
-    assert years_max == []
     glob = rank(q, idx, labels, MatchParams(mode="global"))
     assert all(set(c.part_scores) == {"whole"} for c in glob)
     parts = rank(q, idx, labels, MatchParams(mode="parts"))
@@ -110,7 +105,7 @@ def test_rank_ignores_unlabelled_hits() -> None:
     idx, labels, base = _setup()
     labels = {k: v for k, v in labels.items() if v.model_id == 1}
     ranked = rank({"whole": base[1]}, idx, labels, MatchParams())
-    assert [c.key[0] for c in ranked] == [1]
+    assert [c.key for c in ranked] == [1]
 
 
 def test_softmax_temperature_sharpens() -> None:

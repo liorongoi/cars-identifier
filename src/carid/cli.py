@@ -88,8 +88,8 @@ def add_make(name: str, wikidata: bool = True, collect: bool = False) -> None:
                    if m.name.lower() == name.lower()), None)
     if seeded:
         with svc.engine.db.session() as s:
-            _, models, gens = upsert_make(s, seeded, added_by="cli")
-        typer.echo(f"added from seed file: +{models} models, +{gens} generations")
+            _, models, _gens = upsert_make(s, seeded, added_by="cli")
+        typer.echo(f"added from seed file: +{models} models")
     elif wikidata:
         job = svc.jobs.submit("expand_make", {"make": name, "collect": collect,
                                               "added_by": "cli"}, "cli")
@@ -120,10 +120,9 @@ def identify(image: Path, top_k: int = 10, mode: str | None = None) -> None:
                                                  analyst="cli", case_ref=image.name))
     q = result["quality"]
     typer.echo(f"quality: {q['verdict']} ({q['score']}) {', '.join(q['issues'])}")
-    typer.echo(f"{'#':>2}  {'make':<15} {'model':<20} {'years':<11} {'prob':>6}  refs")
+    typer.echo(f"{'#':>2}  {'make':<15} {'model':<20} {'prob':>6}  refs")
     for c in result["candidates"]:
-        years = f"{c['year_start'] or '?'}-{c['year_end'] or 'now'}"
-        typer.echo(f"{c['rank']:>2}  {c['make']:<15} {c['model']:<20} {years:<11} "
+        typer.echo(f"{c['rank']:>2}  {c['make']:<15} {c['model']:<20} "
                    f"{c['probability']:>6.1%}  {c['reference_images']}")
     for w in result["warnings"]:
         typer.echo(f"! {w}")

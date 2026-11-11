@@ -3,26 +3,18 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Alert, useAnalyst, useLoad } from "../components/common";
 
-interface ModelRow {
-  name: string;
-  from: string;
-  to: string;
-  generations: string; // "E210:2018-; E170:2013-2019"
-}
-
-const emptyRow = (): ModelRow => ({ name: "", from: "", to: "", generations: "" });
-
-/** Parse "E170:2013-2019; E210:2018-" into generation objects. */
-export function parseGenerations(text: string): { name: string; year_start: number; year_end: number | null }[] {
-  return text
-    .split(/[;\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => {
-      const m = /^(.+?)\s*:\s*(\d{4})\s*[-–]\s*(\d{4})?$/.exec(s);
-      if (!m) throw new Error(`Cannot read generation "${s}". Use NAME:START-END, e.g. E210:2018-2024 or E210:2018-`);
-      return { name: m[1]!.trim(), year_start: Number(m[2]), year_end: m[3] ? Number(m[3]) : null };
-    });
+/** "Tiggo 7, Arrizo 5\nOmoda 5" -> ["Tiggo 7", "Arrizo 5", "Omoda 5"] (duplicates removed). */
+export function parseModelNames(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of text.split(/[,;\n]/)) {
+    const name = raw.trim();
+    if (name && !seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+  }
+  return out;
 }
 
 export function AddMakePage() {
@@ -30,7 +22,7 @@ export function AddMakePage() {
   const [name, setName] = useState("");
   const [country, setCountry] = useState("");
   const [aliases, setAliases] = useState("");
-  const [rows, setRows] = useState<ModelRow[]>([emptyRow()]);
+  const [models, setModels] = useState("");
   const [useWikidata, setUseWikidata] = useState(false);
   const [collect, setCollect] = useState(true);
   const [limit, setLimit] = useState(150);
@@ -39,42 +31,14 @@ export function AddMakePage() {
   const [done, setDone] = useState<string | null>(null);
   const catalog = useLoad(() => api.catalog(), []);
   const [modelMake, setModelMake] = useState("");
-  const [modelRow, setModelRow] = useState<ModelRow>(emptyRow());
+  const [modelName, setModelName] = useState("");
 
-  const update = (i: number, patch: Partial<ModelRow>) => setRows(rows.map((r, j) => (i === j ? { ...r, ...patch } : r)));
-
-  const submitMake = async (e: FormEvent) => {
-    e.preventDefault();
+  const run = async (fn: () => Promise<string>) => {
     setError(null);
     setDone(null);
+    setBusy(true);
     try {
-      const models = rows
-        .filter((r) => r.name.trim())
-        .map((r) => ({
-          name: r.name.trim(),
-          year_start: r.from ? Number(r.from) : null,
-          year_end: r.to ? Number(r.to) : null,
-          generations: parseGenerations(r.generations),
-        }));
-      setBusy(true);
-      const res = await api.addMake({
-        name,
-        country: country || null,
-        aliases: aliases.split(",").map((a) => a.trim()).filter(Boolean),
-        models,
-        use_wikidata: useWikidata,
-        collect,
-        per_model_limit: limit,
-        requested_by: analyst || null,
-      });
-      setDone(
-        `${res.existed ? "Updated" : "Added"} ${name}: +${res.models_added} models, +${res.generations_added} generations.` +
-          (res.jobs.length ? ` Queued job(s) #${res.jobs.join(", #")}.` : " No collection queued."),
-      );
-      setName("");
-      setCountry("");
-      setAliases("");
-      setRows([emptyRow()]);
+      setDone(await fn());
       void catalog.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -83,30 +47,43 @@ export function AddMakePage() {
     }
   };
 
-  const submitModel = async (e: FormEvent) => {
+  const submitMake = (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setDone(null);
-    try {
-      setBusy(true);
-      const res = await api.addModel({
-        make_id: Number(modelMake),
-        name: modelRow.name.trim(),
-        year_start: modelRow.from ? Number(modelRow.from) : null,
-        year_end: modelRow.to ? Number(modelRow.to) : null,
-        generations: parseGenerations(modelRow.generations),
+    void run(async () => {
+      const res = await api.addMake({
+        name,
+        country: country || null,
+        aliases: parseModelNames(aliases),
+        models: parseModelNames(models).map((m) => ({ name: m })),
+        use_wikidata: useWikidata,
         collect,
         per_model_limit: limit,
         requested_by: analyst || null,
       });
-      setDone(`Model saved (#${res.model_id}).${res.jobs.length ? ` Collection job #${res.jobs[0]} queued.` : ""}`);
-      setModelRow(emptyRow());
-      void catalog.reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
+      const msg =
+        `${res.existed ? "Updated" : "Added"} ${name}: +${res.models_added} models.` +
+        (res.jobs.length ? ` Queued job(s) #${res.jobs.join(", #")}.` : " No collection queued.");
+      setName("");
+      setCountry("");
+      setAliases("");
+      setModels("");
+      return msg;
+    });
+  };
+
+  const submitModel = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      const res = await api.addModel({
+        make_id: Number(modelMake),
+        name: modelName.trim(),
+        collect,
+        per_model_limit: limit,
+        requested_by: analyst || null,
+      });
+      setModelName("");
+      return `Model saved (#${res.model_id}).${res.jobs.length ? ` Collection job #${res.jobs[0]} queued.` : ""}`;
+    });
   };
 
   return (
@@ -114,7 +91,7 @@ export function AddMakePage() {
       <div className="page-head">
         <div>
           <h1>Add a make or model</h1>
-          <p>Missing a manufacturer? Add it here and the collector will gather interior images for it.</p>
+          <p>Missing a manufacturer or model? Add it here and the collector will gather interior images for it.</p>
         </div>
       </div>
       {error && <Alert kind="bad">{error}</Alert>}
@@ -125,7 +102,7 @@ export function AddMakePage() {
       )}
 
       <div className="stack" style={{ marginTop: 12 }}>
-        <form className="panel" onSubmit={(e) => void submitMake(e)}>
+        <form className="panel" onSubmit={submitMake}>
           <div className="panel-head">
             <h2>New make</h2>
           </div>
@@ -144,52 +121,20 @@ export function AddMakePage() {
                 <input type="text" value={aliases} onChange={(e) => setAliases(e.target.value)} placeholder="Chery Automobile" />
               </label>
             </div>
-
+            <label className="field">
+              Models (comma or one per line){useWikidata && <span className="dim"> — optional with Wikidata</span>}
+              <textarea
+                rows={4}
+                value={models}
+                onChange={(e) => setModels(e.target.value)}
+                placeholder={"Tiggo 7\nTiggo 8\nArrizo 5"}
+                aria-label="models"
+              />
+            </label>
             <label className="check">
               <input type="checkbox" checked={useWikidata} onChange={(e) => setUseWikidata(e.target.checked)} />
-              Fill in models and generations automatically from Wikidata (needs internet on the server)
+              Fill in the model list automatically from Wikidata (needs internet on the server)
             </label>
-
-            <div>
-              <h3 style={{ marginBottom: 8 }}>Models {useWikidata && <span className="dim">(optional with Wikidata)</span>}</h3>
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th style={{ width: 90 }}>From</th>
-                    <th style={{ width: 90 }}>To</th>
-                    <th>Generations (NAME:START-END; …)</th>
-                    <th style={{ width: 40 }} />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i}>
-                      <td>
-                        <input type="text" value={r.name} onChange={(e) => update(i, { name: e.target.value })} placeholder="Tiggo 7" style={{ width: "100%" }} aria-label={`model ${i + 1} name`} />
-                      </td>
-                      <td>
-                        <input type="number" value={r.from} onChange={(e) => update(i, { from: e.target.value })} style={{ width: "100%" }} aria-label={`model ${i + 1} from`} />
-                      </td>
-                      <td>
-                        <input type="number" value={r.to} onChange={(e) => update(i, { to: e.target.value })} placeholder="now" style={{ width: "100%" }} aria-label={`model ${i + 1} to`} />
-                      </td>
-                      <td>
-                        <input type="text" value={r.generations} onChange={(e) => update(i, { generations: e.target.value })} placeholder="T1E:2016-2020; Pro:2020-" style={{ width: "100%" }} aria-label={`model ${i + 1} generations`} />
-                      </td>
-                      <td>
-                        <button type="button" className="btn sm ghost" onClick={() => setRows(rows.length > 1 ? rows.filter((_, j) => j !== i) : [emptyRow()])} aria-label="remove row">
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={() => setRows([...rows, emptyRow()])}>
-                ＋ Add model row
-              </button>
-            </div>
             <CollectOptions collect={collect} setCollect={setCollect} limit={limit} setLimit={setLimit} analyst={analyst} setAnalyst={setAnalyst} />
             <div>
               <button className="btn primary" disabled={busy || !name.trim()}>
@@ -199,7 +144,7 @@ export function AddMakePage() {
           </div>
         </form>
 
-        <form className="panel" onSubmit={(e) => void submitModel(e)}>
+        <form className="panel" onSubmit={submitModel}>
           <div className="panel-head">
             <h2>Add a model to an existing make</h2>
           </div>
@@ -215,23 +160,11 @@ export function AddMakePage() {
                 ))}
               </select>
             </label>
-            <label className="field">
-              Model *
-              <input type="text" required value={modelRow.name} onChange={(e) => setModelRow({ ...modelRow, name: e.target.value })} />
-            </label>
-            <label className="field" style={{ width: 90 }}>
-              From
-              <input type="number" value={modelRow.from} onChange={(e) => setModelRow({ ...modelRow, from: e.target.value })} />
-            </label>
-            <label className="field" style={{ width: 90 }}>
-              To
-              <input type="number" value={modelRow.to} onChange={(e) => setModelRow({ ...modelRow, to: e.target.value })} />
-            </label>
             <label className="field" style={{ flex: 1 }}>
-              Generations
-              <input type="text" value={modelRow.generations} onChange={(e) => setModelRow({ ...modelRow, generations: e.target.value })} placeholder="NAME:START-END; …" />
+              Model *
+              <input type="text" required value={modelName} onChange={(e) => setModelName(e.target.value)} />
             </label>
-            <button className="btn" disabled={busy || !modelMake || !modelRow.name.trim()}>
+            <button className="btn" disabled={busy || !modelMake || !modelName.trim()}>
               Add model
             </button>
           </div>

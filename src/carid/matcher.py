@@ -20,7 +20,7 @@ from carid.index import IndexSet
 from carid.vision.embed import Vectors
 
 Mode = Literal["fusion", "global", "parts"]
-ClassKey = tuple[int, int | None]  # (model_id, generation_id)
+ClassKey = int  # model_id: the system identifies make + model (not years)
 
 
 @dataclass(frozen=True)
@@ -28,9 +28,6 @@ class Label:
     image_id: int
     make_id: int
     model_id: int
-    generation_id: int | None
-    year_start: int | None
-    year_end: int | None
 
 
 @dataclass
@@ -49,8 +46,6 @@ class ClassScore:
     probability: float = 0.0
     part_scores: dict[str, float] = field(default_factory=dict)
     evidence: list[Evidence] = field(default_factory=list)  # best hit per part
-    year_min: int | None = None
-    year_max: int | None = None
 
 
 @dataclass
@@ -62,8 +57,6 @@ class MatchParams:
     softmax_temperature: float = 1.0
     part_weights: dict[str, float] = field(default_factory=dict)
     make_ids: set[int] | None = None
-    year_min: int | None = None
-    year_max: int | None = None
     # None: use the index's own adapters; a dict overrides them ({} = raw vectors).
     adapters: dict[str, Adapter] | None = None
 
@@ -77,13 +70,7 @@ def parts_for_mode(mode: Mode, available: list[str]) -> list[str]:
 
 
 def _label_allowed(label: Label, params: MatchParams) -> bool:
-    if params.make_ids is not None and label.make_id not in params.make_ids:
-        return False
-    if params.year_min is not None and label.year_end is not None \
-            and label.year_end < params.year_min:
-        return False
-    return not (params.year_max is not None and label.year_start is not None
-                and label.year_start > params.year_max)
+    return params.make_ids is None or label.make_id in params.make_ids
 
 
 def rank(
@@ -94,7 +81,6 @@ def rank(
 ) -> list[ClassScore]:
     """Rank all classes with any evidence; probabilities sum to 1 over returned classes."""
     scores: dict[ClassKey, ClassScore] = {}
-    years: dict[ClassKey, list[tuple[int, int]]] = defaultdict(list)
     decay = [0.5**i for i in range(params.votes_per_class)]
 
     for part in parts_for_mode(params.mode, list(query)):
@@ -113,7 +99,7 @@ def rank(
             label = labels.get(iid)
             if label is None or not _label_allowed(label, params):
                 continue
-            key = (label.model_id, label.generation_id)
+            key = label.model_id
             if len(hits_by_class[key]) < params.votes_per_class:
                 hits_by_class[key].append((float(sim), iid, pid, label))
         if not hits_by_class:
@@ -131,9 +117,6 @@ def rank(
             cs.part_scores[part] = round(part_score, 6)
             sim, iid, pid, _ = hits[0]
             cs.evidence.append(Evidence(part, iid, pid, round(sim, 4)))
-            for _, _, _, lab in hits:
-                if lab.year_start is not None:
-                    years[key].append((lab.year_start, lab.year_end or lab.year_start))
 
     ranked = sorted(scores.values(), key=lambda c: -c.score)
     if not ranked:
@@ -144,9 +127,6 @@ def rank(
     probs /= probs.sum()
     for cs, p in zip(ranked, probs.tolist(), strict=True):
         cs.probability = float(p)
-        if years[cs.key]:
-            cs.year_min = min(y[0] for y in years[cs.key])
-            cs.year_max = max(y[1] for y in years[cs.key])
     return ranked
 
 

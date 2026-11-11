@@ -14,7 +14,7 @@
 
 ### 1.1 Purpose
 This document specifies the requirements for **CarID-Interior**, a system that
-identifies a vehicle's **make, model and model year (or year range)** from a
+identifies a vehicle's **make and model** from a
 photograph of the vehicle's **interior**. It is the reference for design,
 implementation, testing and acceptance.
 
@@ -46,17 +46,18 @@ ingestion (single frames may be uploaded), trim-level identification.
 | D2 | Data sources | **Open sources + manufacturer brochures/press sites enabled by default.** Social-network and movie-frame connectors are implemented but **disabled** until the owner records legal approval in configuration. |
 | D3 | UI language | **English.** |
 | D4 | First scope | **Pilot of ~20 makes**, full system; further makes added from the UI. |
-| D5 | Time span | Model years **1996 – current** (30 years). |
+| D5 | Time span | Model years **1996 – current** (30 years) for collection priority. |
+| D6 | Identification target (2026-11-11) | **Make and model only — model years are not identified.** Reference images of any year count for their model. |
 
 ### 1.4 Definitions
 
 | Term | Meaning |
 |---|---|
-| Model-year (MY) | One `(make, model, year)` triple — the atomic label. |
-| Generation | A run of model years with essentially the same interior. Results are reported as year ranges because adjacent years are often visually identical. |
+| Label | One `(make, model)` pair — the atomic class (D6). |
+| Generation | Kept in the seed taxonomy for reference only; not used for identification (D6). |
 | Part | A localised interior component (see §3.3, Table P). |
 | Query | An image submitted by an analyst for identification. |
-| Candidate | A ranked result: make, model, year range, probability, evidence. |
+| Candidate | A ranked result: make, model, probability, evidence. |
 | Top-k accuracy | Fraction of queries where the true model appears in the first k candidates. |
 | Degradation | Blur, low light, noise, compression, occlusion (faces, hands, people). |
 
@@ -109,9 +110,7 @@ Both halves are the same software; collection simply needs network access.
 - C4 Only open-licence ML models with weights that can be stored locally.
 
 ### 2.5 Assumptions
-- A1 The interior of most cars stays the same across a generation (4–8 years);
-  a facelift often changes the screen, vents or steering wheel. The system
-  therefore reports year **ranges** and the true year is "in range".
+- A1 Years are not identified (D6); a model's interiors from all generations form one class.
 - A2 Web coverage is uneven; rare models will have few images. The system must
   show image counts so analysts can judge reliability.
 
@@ -125,9 +124,9 @@ Priority: **M** = must (v1), **S** = should (v1 if time allows), **C** = could (
 
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-DB-1 | Store a taxonomy `Make › Model › Year`, with optional generation name and year range per model. | M |
-| FR-DB-2 | Store every reference image with: file hash, perceptual hash, source, source URL, licence, author/credit, collection date, label (make/model/year or year range), label confidence, quality metrics, review status. | M |
-| FR-DB-3 | Report, for every make, model and model-year, **how many images** are in the database (total, reviewed, and per part). | M |
+| FR-DB-1 | Store a taxonomy `Make › Model`. | M |
+| FR-DB-2 | Store every reference image with: file hash, perceptual hash, source, source URL, licence, author/credit, collection date, label (make/model), label confidence, quality metrics, review status. | M |
+| FR-DB-3 | Report, for every make and model, **how many images** are in the database (total, reviewed, and per part). | M |
 | FR-DB-4 | Ship a seed taxonomy for the ~20 pilot makes (1996 – current). | M |
 | FR-DB-5 | Expand the taxonomy for any make from Wikidata (online) or by manual entry. | M |
 | FR-DB-6 | Prevent duplicates: identical files (SHA-256) and near-duplicates (perceptual hash distance ≤ threshold) are stored once. | M |
@@ -141,9 +140,9 @@ Priority: **M** = must (v1), **S** = should (v1 if time allows), **C** = could (
 | FR-COL-1 | Pluggable **source connectors** with a common interface (search → candidates → download). | M |
 | FR-COL-2 | Enabled-by-default connectors: **Wikimedia Commons**, **Openverse** (open-licence catalogue via its official API; Flickr-origin results can be excluded by config), **manufacturer brochure / press sites** (configured URL list, robots.txt respected), **local folder import** (brochure PDFs and images the owner already holds), **CSV manifests** (links + labels exported from another host). | M |
 | FR-COL-3 | Opt-in connectors (disabled unless `legal_approved`): **social networks** (via official APIs and credentials supplied by the owner), **movie frames** (from video files the owner supplies; frames sampled and filtered). | M |
-| FR-COL-4 | Query generation per model-year (e.g. "2018 Toyota Corolla interior", "Corolla E210 dashboard"), multilingual variants for non-English markets. | M |
+| FR-COL-4 | Query generation per model (e.g. "Toyota Corolla interior", "Toyota Corolla dashboard"), multilingual variants for non-English markets. | M |
 | FR-COL-5 | **Interior filter**: discard images that are not car interiors (zero-shot classifier score below threshold). | M |
-| FR-COL-6 | **Label inference**: derive make/model/year from source metadata (title, categories, captions); keep a label-confidence value. | M |
+| FR-COL-6 | **Label inference**: derive make/model from source metadata (title, categories, captions); keep a label-confidence value. | M |
 | FR-COL-7 | Throttling, retry with exponential back-off on HTTP 429/5xx, resumable jobs, per-source quotas. | M |
 | FR-COL-8 | Collection runs as **background jobs** with progress, counts, errors and logs visible in the UI. | M |
 | FR-COL-9 | Analyst can **add a missing make** (or model) from the UI; this creates the taxonomy entry and queues a collection job for it. | M |
@@ -173,11 +172,11 @@ Table P — part types detected (v1):
 | FR-ID-4 | **Distraction handling**: detect faces/people and mask them so they do not affect matching; masked regions shown in the UI. | M |
 | FR-ID-5 | **Part detection**: locate the parts in Table P with bounding boxes and confidence; analyst can draw/adjust a box manually and re-run. | M (draw: S) |
 | FR-ID-6 | **Matching**: compare the whole image and each detected part with the same part type in the reference database. | M |
-| FR-ID-7 | **Ranking**: fuse the per-part evidence into one probability per model and generation/year range; return **top 5–10** (configurable), highest first. | M |
-| FR-ID-8 | **Result table** columns: rank, make, model, year range, probability, confidence band, number of reference images for that candidate, contributing parts, best matching reference thumbnails. | M |
+| FR-ID-7 | **Ranking**: fuse the per-part evidence into one probability per make + model; return **top 5–10** (configurable), highest first. | M |
+| FR-ID-8 | **Result table** columns: rank, make, model, probability, confidence band, number of reference images for that candidate, contributing parts, best matching reference thumbnails. | M |
 | FR-ID-9 | **Evidence view**: for a candidate, show the query part next to the best matching reference part, with similarity score. | M |
 | FR-ID-10 | Flag **low-confidence / unknown** results (e.g. top probability below threshold or poor quality), never present a guess as certain. | M |
-| FR-ID-11 | Let the analyst filter candidates by make or year range (prior knowledge). | S |
+| FR-ID-11 | Let the analyst filter candidates by make (prior knowledge). | S |
 | FR-ID-12 | Export a case report (PDF/JSON/CSV) with the query, quality report, candidates and evidence. | M (JSON/CSV), S (PDF) |
 | FR-ID-13 | Keep a history of identifications with case number, analyst name, time and result (audit log). | M |
 | FR-ID-14 | Analyst feedback ("correct answer was X") stored and usable to improve the model. | S |
@@ -188,7 +187,7 @@ Table P — part types detected (v1):
 |---|---|---|
 | FR-EV-1 | Hold-out evaluation split, stratified by model, with no near-duplicates across splits. | M |
 | FR-EV-2 | **Degradation suite**: each test image is also evaluated blurred, darkened, noised, JPEG-compressed and partly occluded, to measure robustness. | M |
-| FR-EV-3 | Metrics: top-1/top-5/top-10 accuracy at make, model and model+year-range level; mean reciprocal rank; latency. | M |
+| FR-EV-3 | Metrics: top-1/top-5/top-10 accuracy at make and model level; mean reciprocal rank; latency. | M |
 | FR-EV-4 | Compare at least: (a) whole-image embedding, (b) part-based matching, (c) fused part+whole; report which is best; the server uses the configured winner. | M |
 | FR-EV-5 | Benchmark reports stored and viewable in the UI. | S |
 
@@ -209,7 +208,7 @@ Table P — part types detected (v1):
 |---|---|---|
 | NFR-1 | Performance | Identification ≤ 5 s on CPU (≤ 1.5 s with GPU) for a 12 MP image with a 500k-vector index. UI first paint ≤ 2 s. |
 | NFR-2 | Accuracy (targets, measured by FR-EV) | Pilot set, clean images: model top-5 ≥ 85 %, top-10 ≥ 92 %. Degraded images: top-5 ≥ 70 %. Make top-1 ≥ 85 %. Targets are revised after the first benchmark on real collected data. |
-| NFR-3 | Scalability | 150+ makes, 10 000+ model-years, 2 M reference images on a single server (vector index sharded per part type). |
+| NFR-3 | Scalability | 150+ makes, 3 000+ models, 2 M reference images on a single server (vector index sharded per part type). |
 | NFR-4 | Reliability | Jobs resumable after restart; database writes transactional; no partial images in the store. |
 | NFR-5 | Security | Runs on internal network; optional login (roles: analyst, curator, admin); upload size and type validation; no execution of downloaded content; path-traversal-safe storage; audit log. |
 | NFR-6 | Privacy | Query images stored only for the retention period (default 30 days, configurable, 0 = do not store). Faces in reference images are blurred before storage. |
@@ -231,7 +230,7 @@ Table P — part types detected (v1):
 | `GET /api/identifications/{id}/export?format=json|csv` | Case export. |
 | `GET /api/catalog` | Make › Model › Year tree with image counts. |
 | `POST /api/catalog/makes` | Add a make (optionally with models) and queue collection. |
-| `POST /api/catalog/models` | Add a model with year range. |
+| `POST /api/catalog/models` | Add a model. |
 | `GET /api/images` / `{id}/file` | Browse/serve reference images. |
 | `PATCH /api/images/{id}` | Relabel / approve / reject. |
 | `GET /api/jobs`, `POST /api/jobs`, `POST /api/jobs/{id}/cancel` | Collection & indexing jobs. |
@@ -260,9 +259,9 @@ Table P — part types detected (v1):
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Sparse web data for rare models | Low accuracy on those models | Show image counts; curator can import brochures; generation-level labels pool images across years. |
+| Sparse web data for rare models | Low accuracy on those models | Show image counts; curator can import brochures; all years of a model pool into one class. |
 | Wrong labels in web data | Noisy matching | Label-confidence, interior filter, curator review, outlier detection on embeddings. |
-| Adjacent years look identical | Year error | Report year ranges; probability mass merged per generation. |
+| One model's interior changes across generations | Lower similarity between old and new photos of a model | More images per model spanning its generations; analyst sees evidence images. |
 | Source rate limits / ToS | Slow or blocked collection | Back-off, quotas, official APIs, local import paths. |
 | Heavily degraded queries | Wrong answer | Quality verdict, low-confidence flag, analyst crop tool. |
 | Model weights unavailable offline | System fails offline | `carid fetch-models` bundles weights; fallback lightweight embedder always available. |

@@ -89,10 +89,9 @@ def test_build_targets_and_queries(engine: Engine) -> None:
         all_t = build_targets(s)
     assert len(all_t) == 4
     t = _target(engine, "Alpha", "Wagon")
-    assert t.model_aliases == ["Estate"] and [g.name for g in t.generations] == ["W1", "W2"]
-    assert "Roadster" in t.sibling_models
+    assert t.model_aliases == ["Estate"] and "Roadster" in t.sibling_models
     qs = search_queries(t)
-    assert "Alpha Wagon interior" in qs and "Alpha Wagon W2 interior" in qs
+    assert "Alpha Wagon interior" in qs and not any("W2" in q for q in qs)  # no generations
     assert "Alpha Estate interior" in qs
 
 
@@ -133,14 +132,14 @@ def test_webpages_source_extracts_images(engine: Engine) -> None:
 
     client, _ = _client(handler)
     src = WebPagesSource({"enabled": True, "sites": [
-        {"make": "Alpha", "model": "Roadster", "year": 2012, "urls": ["https://p.test/x"]},
+        {"make": "Alpha", "model": "Roadster", "urls": ["https://p.test/x"]},
         {"make": "Beta", "urls": ["https://p.test/y"]},
     ]}, client)
     cands = list(src.search(_target(engine), 10))
     urls = [c.url for c in cands]
     assert urls == ["https://p.test/img/dash.jpg", "https://p.test/big.jpg",
                     "https://p.test/gallery/2.jpeg"]
-    assert all(c.preset_year == 2012 and "Alpha Roadster" in c.extra_text for c in cands)
+    assert all("Alpha Roadster" in c.extra_text for c in cands)
 
 
 def test_opt_in_sources_are_gated(engine: Engine) -> None:
@@ -185,15 +184,15 @@ def test_collector_end_to_end(engine: Engine) -> None:
     collector = Collector(engine, {"fake": FakeSource(items)})
     target = _target(engine)
     counters = collector.run([target], per_model_limit=50)
-    assert counters["added"] == 4  # 3 good + the unlabelled-year one (curated fake source)
+    assert counters["added"] == 4  # 3 good + the bare "Alpha Roadster" (curated fake source)
     assert counters["label_mismatch"] == 1
     assert counters["not_interior_text"] == 1
     assert counters["invalid_image"] == 1
     assert counters["duplicate"] == 1
     with engine.db.session() as s:
         n_seen = s.scalar(select(func.count()).select_from(SeenUrl))
-        years = sorted(y for y in s.scalars(select(Image.year_start)) if y)
-    assert n_seen == len(items) and years == [2010, 2010, 2010]
+        years = [y for y in s.scalars(select(Image.year_start)) if y]
+    assert n_seen == len(items) and years == []  # model years are not recorded
     # Second run: everything already seen.
     again = collector.run([target], per_model_limit=50)
     assert again.get("added", 0) == 0 and again["already_seen"] == len(items)
@@ -219,8 +218,8 @@ def test_collector_skips_disabled_sources(engine: Engine) -> None:
 def test_folder_source_imports_layout(engine: Engine, tmp_path: Path) -> None:
     root = tmp_path / "imports"
     rng = np.random.default_rng(5)
-    for year in (2003, 2012):
-        d = root / "Alpha" / "Roadster" / str(year)
+    for sub in ("2003", "dashboards"):  # any sub-folder layout is fine
+        d = root / "Alpha" / "Roadster" / sub
         d.mkdir(parents=True)
         (d / "a.jpg").write_bytes(to_jpeg(draw_interior(CLASS_STYLES["Alpha/Roadster/2010"],
                                                         rng)))
@@ -229,13 +228,11 @@ def test_folder_source_imports_layout(engine: Engine, tmp_path: Path) -> None:
     client, _ = _client(lambda r: httpx.Response(500))
     src = FolderSource({"enabled": True, "path": str(root)}, client)
     cands = list(src.search(_target(engine), 10))
-    assert sorted(c.preset_year for c in cands) == [2003, 2012]
+    assert len(cands) == 2
     counters = Collector(engine, {"folder": src}).run([_target(engine)])
     assert counters["added"] == 2
     with engine.db.session() as s:
-        gens = sorted(im.generation.name for im in s.scalars(select(Image))
-                      if im.generation is not None)
-    assert gens == ["R1", "R2"]
+        assert {im.model.name for im in s.scalars(select(Image))} == {"Roadster"}
 
 
 def _ov_result(i: int, title: str, provider: str = "flickr") -> dict[str, Any]:
@@ -316,7 +313,7 @@ def test_manifest_roundtrip(populated_web: Engine, tmp_path: Path) -> None:
     client, _ = _client(lambda r: httpx.Response(500))
     src = ManifestSource({"enabled": True, "paths": [str(tmp_path / "m" / "*.csv")]}, client)
     cands = list(src.search(_target(populated_web), 10))
-    assert len(cands) == 2 and {c.preset_year for c in cands} == {2010}
+    assert len(cands) == 2
     assert all(c.license == "CC BY 4.0" for c in cands)
     guess_text = cands[0].text
     assert "Alpha Roadster interior" in guess_text

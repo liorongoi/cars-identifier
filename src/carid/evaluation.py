@@ -32,11 +32,11 @@ def split_holdout(labels: dict[int, Label], test_fraction: float, max_test: int,
     between train and test: several shots of the same car by the same person would
     otherwise make the test look easier than real casework (FR-EV-1).
     """
-    by_class: dict[tuple[int, int | None], dict[str, list[int]]] = defaultdict(
+    by_class: dict[int, dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(list))
     for iid, lab in labels.items():
         g = (groups or {}).get(iid) or f"image:{iid}"
-        by_class[(lab.model_id, lab.generation_id)][g].append(iid)
+        by_class[lab.model_id][g].append(iid)
     rnd = random.Random(seed)
     chosen: list[list[int]] = []
     for class_groups in by_class.values():
@@ -155,7 +155,6 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
                 r = ranks[cond][f"{mode}{suffix}"]
                 r["make"].append(_make_rank(ranked, truth.make_id))
                 r["model"].append(_rank_of(ranked, _model_pred(truth)))
-                r["model_year"].append(_rank_of(ranked, _year_pred(truth)))
             latency.append(time.perf_counter() - t0)
             if progress:
                 progress(step / total, f"image {iid} [{cond}]")
@@ -176,7 +175,7 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
         "detector": engine.detector.name,
         "reference_images": len(labels),
         "test_images": len(test_ids),
-        "classes": len({(lab.model_id, lab.generation_id) for lab in labels.values()}),
+        "classes": len({lab.model_id for lab in labels.values()}),
         "conditions": conditions,
         "modes": keys,
         "results": results,
@@ -192,18 +191,4 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
 
 
 def _model_pred(truth: Label) -> Callable[[ClassScore], bool]:
-    return lambda c: c.key[0] == truth.model_id
-
-
-def _year_pred(truth: Label) -> Callable[[ClassScore], bool]:
-    return lambda c: _year_ok(c, truth)
-
-
-def _year_ok(c: ClassScore, truth: Label) -> bool:
-    if c.key[0] != truth.model_id:
-        return False
-    if truth.generation_id is not None and c.key[1] is not None:
-        return c.key[1] == truth.generation_id
-    if truth.year_start is None or c.year_min is None or c.year_max is None:
-        return True  # no year information to contradict
-    return c.year_min <= (truth.year_end or truth.year_start) and truth.year_start <= c.year_max
+    return lambda c: c.key == truth.model_id

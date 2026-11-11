@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, formatYears, pct } from "../api";
+import { api, pct } from "../api";
 import { ResultView } from "../components/ResultView";
 import { Alert, Chip, Spinner, formatDate, useAnalyst, useLoad } from "../components/common";
 
@@ -43,7 +43,7 @@ export function HistoryPage() {
                 <td>
                   {h.top ? (
                     <>
-                      {h.top.make} {h.top.model} <span className="dim small">{formatYears(h.top.year_start, h.top.year_end)}</span>
+                      {h.top.make} {h.top.model}
                     </>
                   ) : (
                     <span className="dim">no match</span>
