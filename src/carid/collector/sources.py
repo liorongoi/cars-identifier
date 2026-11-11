@@ -433,8 +433,15 @@ class OpenverseSource(SourceConnector):
 
     def _query(self, params: dict[str, Any]) -> dict[str, Any]:
         try:
-            r = self.http.get(self.API, params=params, check_robots=False,
-                              headers=self._auth_headers())
+            try:
+                r = self.http.get(self.API, params=params, check_robots=False,
+                                  headers=self._auth_headers())
+            except FetchError as exc:
+                if "HTTP 401" not in str(exc) or self._token is None:
+                    raise
+                self._token = None  # access token expired: get a fresh one, retry once
+                r = self.http.get(self.API, params=params, check_robots=False,
+                                  headers=self._auth_headers())
         except HostPaused as exc:
             raise SourceExhausted(f"Openverse rate limit reached ({exc})") from exc
         except FetchError as exc:

@@ -402,3 +402,32 @@ def test_openverse_waits_short_backoff_but_stops_on_long_one(engine: Engine) -> 
     assert counters.get("sources_exhausted") == 1, (counters, logs)
     assert counters.get("source_errors", 0) == 0
     assert 36000.0 not in sleeps2
+
+
+def test_openverse_uses_app_credentials_and_refreshes_expired_token(
+        engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    from carid.collector.sources import OpenverseSource
+
+    monkeypatch.setenv("OPENVERSE_CLIENT_ID", "cid")
+    monkeypatch.setenv("OPENVERSE_CLIENT_SECRET", "secret")
+    issued: list[str] = []
+    state = {"expired_once": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/auth_tokens/token/"):
+            body = request.content.decode()
+            assert "grant_type=client_credentials" in body and "client_id=cid" in body
+            issued.append(f"tok{len(issued)}")
+            return httpx.Response(200, json={"access_token": issued[-1]})
+        auth = request.headers.get("authorization")
+        if auth == "Bearer tok0" and not state["expired_once"]:
+            state["expired_once"] = True
+            return httpx.Response(401)
+        assert auth == f"Bearer {issued[-1]}"
+        return httpx.Response(200, json={"page_count": 1,
+                                         "results": [_ov_result(1, "Alpha Roadster")]})
+
+    client, _ = _client(handler)
+    src = OpenverseSource({"enabled": True, "max_queries_per_model": 1}, client)
+    assert [c.url for c in src.search(_target(engine), 5)] == ["https://img.test/1.jpg"]
+    assert issued == ["tok0", "tok1"]
