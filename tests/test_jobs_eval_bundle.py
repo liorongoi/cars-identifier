@@ -126,3 +126,16 @@ def test_services_collect_job_uses_folder(settings: Settings, engine: Engine) ->
     reindex = svc.jobs.submit("reindex", {})
     svc.jobs.run_pending()
     assert _status(svc.jobs, reindex).status == JobStatus.succeeded
+
+
+def test_split_holdout_never_splits_a_group() -> None:
+    labels = {i: Label(i, 1, 1, None, 2010, 2010) for i in range(12)}
+    groups = {i: f"photographer{i // 4}" for i in range(12)}  # 3 groups of 4
+    for seed in range(5):
+        test = set(split_holdout(labels, 0.4, 100, seed, groups=groups))
+        for g in range(3):
+            members = {i for i in range(12) if i // 4 == g}
+            assert members <= test or not (members & test)
+        assert len(test) in (4, 8)
+    single = {i: f"same{i * 0}" for i in range(12)}
+    assert split_holdout(labels, 0.5, 100, 0, groups=single) == []

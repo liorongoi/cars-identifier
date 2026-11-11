@@ -12,6 +12,7 @@ from dataclasses import replace
 from typing import Any
 
 import numpy as np
+from sqlalchemy import select
 
 from carid.adapter import Adapter
 from carid.engine import Engine
@@ -24,22 +25,40 @@ ALL_MODES: tuple[Mode, ...] = ("fusion", "global", "parts")
 
 
 def split_holdout(labels: dict[int, Label], test_fraction: float, max_test: int,
-                  seed: int) -> list[int]:
-    """Pick test images per class, leaving at least one training image in every class."""
-    by_class: dict[tuple[int, int | None], list[int]] = defaultdict(list)
+                  seed: int, groups: dict[int, str] | None = None) -> list[int]:
+    """Pick test images per class, leaving at least one training group in every class.
+
+    ``groups`` maps image id -> group (e.g. photographer). A group is never split
+    between train and test: several shots of the same car by the same person would
+    otherwise make the test look easier than real casework (FR-EV-1).
+    """
+    by_class: dict[tuple[int, int | None], dict[str, list[int]]] = defaultdict(
+        lambda: defaultdict(list))
     for iid, lab in labels.items():
-        by_class[(lab.model_id, lab.generation_id)].append(iid)
+        g = (groups or {}).get(iid) or f"image:{iid}"
+        by_class[(lab.model_id, lab.generation_id)][g].append(iid)
     rnd = random.Random(seed)
-    test: list[int] = []
-    for ids in by_class.values():
-        if len(ids) < 2:
+    chosen: list[list[int]] = []
+    for class_groups in by_class.values():
+        names = sorted(class_groups)
+        if len(names) < 2:
             continue
-        ids = sorted(ids)
-        rnd.shuffle(ids)
-        n = min(len(ids) - 1, max(1, math.floor(len(ids) * test_fraction)))
-        test.extend(ids[:n])
-    rnd.shuffle(test)
-    return sorted(test[:max_test])
+        rnd.shuffle(names)
+        total = sum(len(v) for v in class_groups.values())
+        target = max(1, math.floor(total * test_fraction))
+        taken = 0
+        for name in names[:-1]:  # the last group always stays in training
+            if taken >= target:
+                break
+            chosen.append(sorted(class_groups[name]))
+            taken += len(class_groups[name])
+    rnd.shuffle(chosen)
+    test: list[int] = []
+    for group_ids in chosen:  # cap by whole groups so no group is split
+        if len(test) + len(group_ids) > max_test:
+            continue
+        test.extend(group_ids)
+    return sorted(test)
 
 
 def _rank_of(ranked: list[ClassScore], pred: Callable[[ClassScore], bool]) -> int | None:
@@ -76,7 +95,12 @@ def run_benchmark(engine: Engine, *, test_fraction: float = 0.2, max_test: int =
                   should_stop: Callable[[], bool] | None = None,
                   job_id: int | None = None) -> dict[str, Any]:
     labels = engine.labels()
-    test_ids = split_holdout(labels, test_fraction, max_test, seed)
+    from carid.models import Image as _Image
+
+    with engine.db.session() as s:
+        groups = {iid: f"{credit}" for iid, credit in s.execute(
+            select(_Image.id, _Image.credit).where(_Image.credit.is_not(None))).all()}
+    test_ids = split_holdout(labels, test_fraction, max_test, seed, groups=groups)
     conditions = ["clean", *(degradations if degradations is not None else list(DEGRADATIONS))]
     unknown = [c for c in conditions if c != "clean" and c not in DEGRADATIONS]
     if unknown:
