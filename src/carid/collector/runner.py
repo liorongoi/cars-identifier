@@ -199,8 +199,9 @@ class Collector:
 
 
 def recheck_titles(engine: Engine, actor: str = "recheck") -> list[tuple[int, str]]:
-    """Reject stored images whose title names the make but a different model."""
-    from carid.collector.labeler import title_verdict
+    """Reject stored images whose title names the make but a different model, or only
+    states years outside the model's covered range (e.g. a 1967 Malibu)."""
+    from carid.collector.labeler import title_out_of_scope, title_verdict
     from carid.models import Image, ReviewStatus
 
     with engine.db.session() as s:
@@ -209,7 +210,8 @@ def recheck_titles(engine: Engine, actor: str = "recheck") -> list[tuple[int, st
             Image.review_status != ReviewStatus.rejected, Image.title.is_not(None))).all()
     bad = [(iid, title) for iid, model_id, title in rows
            if title and model_id in targets
-           and title_verdict(title, targets[model_id]) == "other"]
+           and (title_verdict(title, targets[model_id]) == "other"
+                or title_out_of_scope(title, targets[model_id]))]
     for iid, _ in bad:
         engine.set_review_status(iid, ReviewStatus.rejected, actor)
     engine.save_index()

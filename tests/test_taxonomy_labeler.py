@@ -149,7 +149,7 @@ def test_infer_label_rejects_and_penalises() -> None:
     mixed = infer_label("2015 Toyota Corolla vs Camry interior", t)
     assert clean is not None and mixed is not None
     assert mixed.confidence < clean.confidence
-    assert infer_label("Toyota Corolla interior 1950", t).year_start is None  # type: ignore[union-attr]
+    assert infer_label("Toyota Corolla interior 1950", t) is None  # out of covered years
     preset = infer_label("Toyota Corolla", t, preset_year=2020)
     assert preset is not None and preset.year_start == 2020
 
@@ -193,3 +193,21 @@ def test_title_outranks_tags() -> None:
     assert by_title is not None and by_tags is not None
     assert by_tags.confidence < by_title.confidence
     assert "only in tags" in by_tags.reason
+
+
+def test_out_of_scope_years_and_model_numbers() -> None:
+    from carid.collector.labeler import title_out_of_scope
+
+    t = _target()  # Corolla, generations E170 (2013) and E210 (2018-)
+    assert infer_label("1987 Toyota Corolla interior", t) is None
+    assert infer_label("1987 Toyota Corolla interior", t, preset_year=2015) is not None
+    ok = infer_label("2015 Toyota Corolla interior (my 1987 one was nicer)", t)
+    assert ok is not None and ok.year_start == 2015
+    assert title_out_of_scope("1984 Toyota Corolla KE70", t)
+    assert not title_out_of_scope("Toyota Corolla interior", t)
+    p = Target(make_id=1, make="Peugeot", make_aliases=[], model_id=1, model="2008",
+               model_aliases=[], year_start=2013, year_end=None,
+               generations=[GenerationRef(1, "A94", 2013, 2019)], sibling_models=["2008", "3008"])
+    assert not title_out_of_scope("Prueba Peugeot 2008 1.2 PureTech", p)
+    g = infer_label("Peugeot 2008 interior 2016", p)
+    assert g is not None and g.year_start == 2016
