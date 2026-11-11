@@ -32,3 +32,18 @@ def test_owl_detector_offline_returns_all_parts() -> None:
     img = draw_interior(next(iter(CLASS_STYLES.values())), np.random.default_rng(0))
     parts = {p.part for p in det.detect(img)}
     assert {"whole", "steering_wheel", "infotainment", "dashboard"} <= parts
+
+
+def test_dinov2_embedder_offline() -> None:
+    from carid.vision.deep import DinoV2Embedder
+
+    if not any((CACHE / "hf").glob("models--facebook--dinov2-*")):
+        pytest.skip("DINOv2 weights not cached")
+    name = next((CACHE / "hf").glob("models--facebook--dinov2-*")).name
+    model = "facebook/" + name.split("--")[-1]
+    emb = DinoV2Embedder(model, str(CACHE), allow_download=False)
+    img = draw_interior(next(iter(CLASS_STYLES.values())), np.random.default_rng(0))
+    wide = np.concatenate([img, img], axis=1)  # non-square: resized, not centre-cropped
+    v = emb.embed([img, wide])
+    assert v.shape == (2, emb.dim) and emb.dim % 2 == 0
+    np.testing.assert_allclose(np.linalg.norm(v, axis=1), 1.0, rtol=1e-4)

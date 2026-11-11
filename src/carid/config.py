@@ -63,7 +63,9 @@ class Settings(BaseSettings):
     database_url: str | None = None  # defaults to SQLite inside data_dir
 
     # Models
-    embedder: Literal["auto", "clip", "handcrafted"] = "auto"
+    embedder: Literal["auto", "clip", "dinov2", "handcrafted"] = "auto"
+    dino_model: str = "facebook/dinov2-base"
+    dino_image_size: int = Field(224, ge=112, le=518)
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "laion2b_s34b_b79k"
     detector: Literal["auto", "owl", "layout"] = "auto"

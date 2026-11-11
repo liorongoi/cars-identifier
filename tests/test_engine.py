@@ -233,3 +233,25 @@ def test_add_missing_tiles_upgrades_old_index(populated: Engine) -> None:
     populated.index.parts.pop("tile")
     assert populated.add_missing_tiles() == 24
     assert populated.index.sizes()["tile"] > 24 * 30
+
+
+def test_rebuild_reuses_stored_boxes_by_default(populated: Engine) -> None:
+    with populated.db.session() as s:
+        before = sorted(s.scalars(select(ImagePart.id)))
+    sizes = populated.index.sizes()
+    assert populated.rebuild_index() == 24
+    with populated.db.session() as s:
+        after = sorted(s.scalars(select(ImagePart.id)))
+    assert after == before  # same part records: other embedders' indexes stay valid
+    assert populated.index.sizes() == sizes
+    img = to_jpeg(draw_interior(CLASS_STYLES["Beta/City/2012"], np.random.default_rng(31)))
+    assert populated.identify(img, IdentifyOptions())["candidates"][0]["model"] == "City"
+
+
+def test_rebuild_with_redetect_replaces_boxes(populated: Engine) -> None:
+    with populated.db.session() as s:
+        before = set(s.scalars(select(ImagePart.id)))
+    populated.rebuild_index(redetect=True)
+    with populated.db.session() as s:
+        after = set(s.scalars(select(ImagePart.id)))
+    assert not (before & after)

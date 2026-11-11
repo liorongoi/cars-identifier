@@ -63,7 +63,8 @@ class Services:
         return counters
 
     def _job_reindex(self, ctx: JobContext) -> dict[str, Any]:
-        n = self.engine.rebuild_index(progress=ctx.progress, should_stop=ctx.should_stop)
+        n = self.engine.rebuild_index(progress=ctx.progress, should_stop=ctx.should_stop,
+                                      redetect=bool(ctx.params.get("redetect", False)))
         ctx.log(f"re-indexed {n} images with {self.engine.embedder.name}")
         return {"indexed": n}
 

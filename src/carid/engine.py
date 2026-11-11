@@ -111,7 +111,7 @@ class Engine:
         cache = str(settings.models_cache)
         self.embedder = embedder or get_embedder(
             settings.embedder, settings.clip_model, settings.clip_pretrained, cache,
-            settings.allow_model_download)
+            settings.allow_model_download, settings.dino_model, settings.dino_image_size)
         self.detector = detector or get_part_detector(
             settings.detector, settings.owl_model, cache, settings.allow_model_download)
         self.faces = FaceDetector(settings.models_cache)
@@ -470,6 +470,26 @@ class Engine:
             self._index_tiles(s, image, work)
         image.indexed = True
 
+    def _embed_stored_parts(self, image: Image, img: RGBImage) -> None:
+        """Embed an image's stored part/tile boxes with the current embedder."""
+        work, _ = enhance(img, assess_quality(img))
+        by_part: dict[str, list[ImagePart]] = {}
+        for p in image.parts:
+            by_part.setdefault(p.part, []).append(p)
+        rows = [r for rs in by_part.values() for r in rs]
+        crops, keep = [], []
+        for r in rows:
+            try:
+                crops.append(crop(work, tuple(int(v) for v in r.bbox)))  # type: ignore[arg-type]
+                keep.append(r)
+            except ValueError:
+                continue
+        vecs = self.embedder.embed(crops)
+        for part in {r.part for r in keep}:
+            idx = [i for i, r in enumerate(keep) if r.part == part]
+            self.index.add(part, np.array([keep[i].id for i in idx]),
+                           np.full(len(idx), image.id, dtype=np.int64), vecs[idx])
+
     def _index_tiles(self, s: Session, image: Image, work: RGBImage) -> int:
         """Index multi-scale detail tiles so close-ups of small items can be matched."""
         tiles = detail_tiles(work)
@@ -543,8 +563,14 @@ class Engine:
     def save_index(self) -> None:
         self.index.save()
 
-    def rebuild_index(self, progress: Any = None, should_stop: Any = None) -> int:
-        """Re-embed every non-rejected image (e.g. after switching embedder)."""
+    def rebuild_index(self, progress: Any = None, should_stop: Any = None,
+                      redetect: bool = False) -> int:
+        """Re-embed every non-rejected image (e.g. after switching embedder).
+
+        By default the stored part and tile boxes are reused: no re-detection, and the
+        part records stay shared by every embedder's index. ``redetect`` re-runs part
+        detection (and replaces the boxes) instead.
+        """
         with self.db.session() as s:
             ids = list(s.scalars(select(Image.id).where(
                 Image.review_status != ReviewStatus.rejected).order_by(Image.id)))
@@ -563,10 +589,16 @@ class Engine:
                     log.warning("missing file for image %s: %s", image_id, path)
                     continue
                 img = decode_image(path.read_bytes(), self.settings.max_image_pixels)
-                self._index_image(s, image, img)
+                if redetect or not image.parts:
+                    self._index_image(s, image, img)
+                else:
+                    self._embed_stored_parts(image, img)
+                    image.indexed = True
                 done += 1
             if progress:
                 progress(n / max(len(ids), 1), f"indexed {n}/{len(ids)}")
+            if n % 100 == 0:
+                self.index.save()
         self.index.save()
         self.invalidate_labels()
         return done

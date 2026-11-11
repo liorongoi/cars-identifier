@@ -73,7 +73,12 @@ class HandcraftedEmbedder:
 
 
 def get_embedder(kind: str, clip_model: str, clip_pretrained: str, models_cache: str,
-                 allow_download: bool) -> Embedder:
+                 allow_download: bool, dino_model: str = "facebook/dinov2-base",
+                 dino_size: int = 224) -> Embedder:
+    if kind == "dinov2":
+        from carid.vision.deep import DinoV2Embedder
+
+        return DinoV2Embedder(dino_model, models_cache, allow_download, dino_size)
     if kind in ("auto", "clip"):
         try:
             from carid.vision.deep import ClipEmbedder

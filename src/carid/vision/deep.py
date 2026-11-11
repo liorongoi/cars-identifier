@@ -54,6 +54,51 @@ def _device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+class DinoV2Embedder:
+    """DINOv2 (self-supervised ViT, 14 px patches): strong on fine visual detail.
+
+    Vector = [CLS token ; mean of patch tokens], each L2-normalised, so both the
+    global layout and local texture/shape detail contribute. Images are resized to
+    a square without centre-cropping, so the edges of a cabin photo (steering wheel,
+    door panel) are not cut off.
+    """
+
+    def __init__(self, model: str, models_cache: str, allow_download: bool,
+                 image_size: int = 224) -> None:
+        import torch
+        from transformers import AutoImageProcessor, AutoModel
+
+        kwargs: dict[str, Any] = {"cache_dir": str(Path(models_cache) / "hf")}
+        if not allow_download:
+            kwargs["local_files_only"] = True
+        self._torch = torch
+        self.device = _device()
+        self.processor = cast(Any, AutoImageProcessor).from_pretrained(model, **kwargs)
+        self.model = cast(Any, AutoModel).from_pretrained(model, **kwargs).to(self.device)
+        self.model.eval()
+        self.image_size = image_size
+        self.dim = int(self.model.config.hidden_size) * 2
+        self.name = f"{model.rsplit('/', 1)[-1]}-{image_size}"
+        self._lock = threading.Lock()
+
+    def embed(self, images: list[RGBImage]) -> Vectors:
+        if not images:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        torch = self._torch
+        out: list[np.ndarray] = []
+        size = {"height": self.image_size, "width": self.image_size}
+        with self._lock, torch.no_grad():
+            for i in range(0, len(images), 32):
+                batch = [Image.fromarray(im) for im in images[i : i + 32]]
+                inputs = self.processor(images=batch, return_tensors="pt", size=size,
+                                        do_center_crop=False).to(self.device)
+                hidden = self.model(**inputs).last_hidden_state.float()
+                cls = l2_normalize(hidden[:, 0].cpu().numpy())
+                patches = l2_normalize(hidden[:, 1:].mean(dim=1).cpu().numpy())
+                out.append(np.concatenate([cls, patches], axis=1))
+        return l2_normalize(np.concatenate(out))
+
+
 class ClipEmbedder:
     """OpenCLIP image tower. Weights are cached under ``models_cache`` for offline use."""
 
