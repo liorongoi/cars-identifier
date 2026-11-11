@@ -37,6 +37,7 @@ PART_NAMES: tuple[str, ...] = (
     "gear_selector",
     "climate_control",
     "door_panel",
+    "detail",  # analyst-drawn box around any small item (knob, button, badge...)
 )
 
 # How much each part's evidence counts in the fused score. Tuned by the benchmark.
@@ -51,6 +52,7 @@ DEFAULT_PART_WEIGHTS: dict[str, float] = {
     "gear_selector": 0.6,
     "climate_control": 0.7,
     "door_panel": 0.5,
+    "detail": 1.2,  # query (or drawn box) matched against reference detail tiles
 }
 
 
@@ -73,6 +75,9 @@ class Settings(BaseSettings):
     # "auto": use the best mode (and adapter on/off) of the latest benchmark; before any
     # benchmark exists it falls back to "fusion".
     matcher_mode: Literal["auto", "fusion", "global", "parts"] = "auto"
+    # Small items: every reference is also indexed as overlapping multi-scale tiles, and
+    # the query (whole image and any "detail" box) is matched against them.
+    detail_tiles: bool = True
     use_adapter: bool = True  # apply the learned LDA adapter when one has been trained
     adapter_shrinkage: float = Field(0.5, ge=0.0, le=1.0)
     top_k: int = Field(10, ge=1, le=50)

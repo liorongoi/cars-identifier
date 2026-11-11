@@ -30,7 +30,9 @@ function QueryCrop({ img, bbox, size }: { img: HTMLImageElement | null; bbox: BB
 
 export function ResultsTable({ candidates, queryParts, imageSize, queryImg, onHoverPart }: Props) {
   const [open, setOpen] = useState<number | null>(candidates[0]?.rank ?? null);
-  const partBox = (part: string) => queryParts.find((p) => p.part === part)?.bbox;
+  // Evidence "detail" compares the whole query photo; "detail_box" the analyst's small-item box.
+  const partBox = (part: string) =>
+    queryParts.find((p) => p.part === (part === "detail" ? "whole" : part === "detail_box" ? "detail" : part))?.bbox;
 
   if (!candidates.length) return <div className="empty">No candidates.</div>;
   return (

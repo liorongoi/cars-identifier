@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, PART_LABELS, type BBox, type IdentifyResult } from "../api";
+import { api, DRAWABLE_PARTS, type BBox, type IdentifyResult } from "../api";
 import { ResultView } from "../components/ResultView";
 import { Alert, Chip, Spinner, useAnalyst, useLoad } from "../components/common";
 
@@ -9,7 +9,7 @@ const MODES = [
   { id: "parts", label: "Parts" },
   { id: "global", label: "Whole" },
 ];
-const DRAWABLE = Object.keys(PART_LABELS).filter((p) => p !== "whole");
+const DRAWABLE = Object.keys(DRAWABLE_PARTS);
 const ACCEPT = "image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/heic,.heic";
 
 export function IdentifyPage() {
@@ -219,13 +219,14 @@ export function IdentifyPage() {
             </div>
             <div className="panel-body stack">
               <div className="small muted">
-                If a part was missed or mis-placed, draw it on the image, then re-run. Manual boxes override detection.
+                Draw a box around a small item (gear knob, vent, switch block, badge) or a missed part, then re-run.
+                Small items are matched against detail regions of every reference photo.
               </div>
               <div className="row" style={{ gap: 8 }}>
                 <select value={pickPart} onChange={(e) => setPickPart(e.target.value)} aria-label="part to draw" style={{ flex: 1 }}>
                   {DRAWABLE.map((p) => (
                     <option key={p} value={p}>
-                      {PART_LABELS[p]}
+                      {DRAWABLE_PARTS[p]}
                     </option>
                   ))}
                 </select>
@@ -240,7 +241,7 @@ export function IdentifyPage() {
               </div>
               {manual.map((m) => (
                 <div key={m.part} className="row small">
-                  <Chip kind="good">{PART_LABELS[m.part]}</Chip>
+                  <Chip kind="good">{DRAWABLE_PARTS[m.part] ?? m.part}</Chip>
                   <span className="mono dim">{m.bbox.join(", ")}</span>
                   <span className="spacer" />
                   <button className="btn sm ghost" onClick={() => setManual(manual.filter((x) => x.part !== m.part))}>

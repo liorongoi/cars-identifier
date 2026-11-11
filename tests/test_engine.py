@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from carid.engine import Engine, IdentifyOptions, SourceInfo
-from carid.models import Identification, Image, ReviewStatus
+from carid.models import Identification, Image, ImagePart, ReviewStatus
 from carid.vision.degrade import DEGRADATIONS
 from carid.vision.imageio import ImageDecodeError
 from tests.conftest import CLASS_STYLES, draw_interior, label_for, to_jpeg
@@ -193,3 +193,43 @@ def test_index_warning_when_out_of_sync(populated: Engine) -> None:
     assert populated.index_warnings() == []
     populated.index.clear()
     assert "Rebuild index" in populated.index_warnings()[0]
+
+
+def test_detail_tiles_are_indexed(populated: Engine) -> None:
+    sizes = populated.index.sizes()
+    assert sizes["tile"] == 24 * 67 or sizes["tile"] > 24 * 30
+    with populated.db.session() as s:
+        n = s.scalar(select(func.count()).select_from(ImagePart).where(ImagePart.part == "tile"))
+    assert n == sizes["tile"]
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_closeup_of_small_item_is_matched(populated: Engine, seed: int) -> None:
+    """A tight crop (small item) should still rank the right model in the top 3."""
+    from carid.vision.degrade import closeup
+
+    rng = np.random.default_rng(100 + seed)
+    hits = 0
+    for key, style in CLASS_STYLES.items():
+        q = closeup(draw_interior(style, rng), rng)
+        res = populated.identify(to_jpeg(q), IdentifyOptions(top_k=3))
+        names = [c["model"] for c in res["candidates"]]
+        hits += key.split("/")[1] in names
+        assert any(e["part"] == "detail" for c in res["candidates"] for e in c["evidence"])
+    assert hits >= 3, hits
+
+
+def test_drawn_small_item_box_searches_tiles(populated: Engine) -> None:
+    img = draw_interior(CLASS_STYLES["Beta/City/2012"], np.random.default_rng(8))
+    res = populated.identify(to_jpeg(img), IdentifyOptions(
+        manual_parts=[{"part": "detail", "bbox": [440, 460, 620, 600]}]))
+    assert any("detail_box" in c["part_scores"] for c in res["candidates"])
+    assert res["candidates"][0]["model"] == "City"
+
+
+def test_add_missing_tiles_upgrades_old_index(populated: Engine) -> None:
+    with populated.db.session() as s:
+        s.execute(delete(ImagePart).where(ImagePart.part == "tile"))
+    populated.index.parts.pop("tile")
+    assert populated.add_missing_tiles() == 24
+    assert populated.index.sizes()["tile"] > 24 * 30

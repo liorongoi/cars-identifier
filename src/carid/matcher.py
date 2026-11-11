@@ -69,6 +69,23 @@ def parts_for_mode(mode: Mode, available: list[str]) -> list[str]:
     return list(available)
 
 
+def _searches(mode: Mode, query: dict[str, Vectors],
+              index: IndexSet) -> list[tuple[str, str, str]]:
+    """(query vector, index to search, evidence name) triples.
+
+    Besides like-for-like part searches, the whole query image and any analyst-drawn
+    "detail" box are matched against the references' detail tiles, so a close-up of a
+    small item (gear knob, vent, switch block) finds the same region in cabin photos.
+    """
+    out = [(p, p, p) for p in parts_for_mode(mode, list(query)) if p != "detail"]
+    if index.get("tile") is not None:
+        if "whole" in query and mode != "parts":
+            out.append(("whole", "tile", "detail"))
+        if "detail" in query:
+            out.append(("detail", "tile", "detail_box"))
+    return out
+
+
 def _label_allowed(label: Label, params: MatchParams) -> bool:
     return params.make_ids is None or label.make_id in params.make_ids
 
@@ -83,16 +100,16 @@ def rank(
     scores: dict[ClassKey, ClassScore] = {}
     decay = [0.5**i for i in range(params.votes_per_class)]
 
-    for part in parts_for_mode(params.mode, list(query)):
-        idx = index.get(part)
+    for qpart, ipart, part in _searches(params.mode, query, index):
+        idx = index.get(ipart)
         if idx is None:
             continue
-        weight = params.part_weights.get(part, 1.0)
+        weight = params.part_weights.get("detail" if ipart == "tile" else part, 1.0)
         if weight <= 0:
             continue
         override: Adapter | str | None = (
-            "default" if params.adapters is None else params.adapters.get(part))
-        part_ids, image_ids, sims = idx.search(query[part], params.neighbors_per_part, override)
+            "default" if params.adapters is None else params.adapters.get(ipart))
+        part_ids, image_ids, sims = idx.search(query[qpart], params.neighbors_per_part, override)
         hits_by_class: dict[ClassKey, list[tuple[float, int, int, Label]]] = defaultdict(list)
         for pid, iid, sim in zip(part_ids.tolist(), image_ids.tolist(), sims.tolist(),
                                  strict=True):

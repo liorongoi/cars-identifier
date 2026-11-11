@@ -344,4 +344,20 @@ export const PART_LABELS: Record<string, string> = {
   gear_selector: "Gear selector",
   climate_control: "Climate controls",
   door_panel: "Door panel",
+  detail: "Small item (whole photo vs detail tiles)",
+  detail_box: "Small item (your box)",
+};
+
+/** Parts an analyst can draw. "detail_box" is drawn as part "detail". */
+export const DRAWABLE_PARTS: Record<string, string> = {
+  detail: "Any small item (knob, vent, button, badge…)",
+  steering_wheel: "Steering wheel",
+  instrument_cluster: "Instrument cluster",
+  infotainment: "Infotainment screen",
+  air_vent: "Air vents",
+  center_console: "Center console",
+  gear_selector: "Gear selector",
+  climate_control: "Climate controls",
+  door_panel: "Door panel",
+  dashboard: "Dashboard",
 };

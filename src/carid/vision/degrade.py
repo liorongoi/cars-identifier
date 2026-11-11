@@ -62,6 +62,17 @@ def occlusion(img: RGBImage, rng: np.random.Generator) -> RGBImage:
     return out
 
 
+def closeup(img: RGBImage, rng: np.random.Generator) -> RGBImage:
+    """A photo of a small item: a random 25-45% (of each side) region, enlarged."""
+    h, w = img.shape[:2]
+    frac = rng.uniform(0.25, 0.45)
+    ch, cw = int(h * frac), int(w * frac)
+    y = int(rng.integers(0, h - ch + 1))
+    x = int(rng.integers(0, w - cw + 1))
+    out = cv2.resize(img[y:y + ch, x:x + cw], (w, h), interpolation=cv2.INTER_CUBIC)
+    return np.asarray(out, dtype=np.uint8)
+
+
 DEGRADATIONS: dict[str, Callable[[RGBImage, np.random.Generator], RGBImage]] = {
     "blur": gaussian_blur,
     "motion_blur": motion_blur,
@@ -69,4 +80,5 @@ DEGRADATIONS: dict[str, Callable[[RGBImage, np.random.Generator], RGBImage]] = {
     "noise": sensor_noise,
     "jpeg": jpeg_artifacts,
     "occlusion": occlusion,
+    "closeup": closeup,
 }

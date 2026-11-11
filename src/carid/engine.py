@@ -42,7 +42,7 @@ from carid.vision.imageio import (
     resize_max_side,
     sha256_bytes,
 )
-from carid.vision.parts import PartBox, PartDetector, get_part_detector
+from carid.vision.parts import PartBox, PartDetector, detail_tiles, get_part_detector
 from carid.vision.quality import QualityReport, assess_quality
 
 log = logging.getLogger(__name__)
@@ -466,7 +466,51 @@ class Engine:
             s.flush()
             self.index.add(p.part, np.array([row.id]), np.array([image.id]),
                            vectors[p.part][None, :])
+        if self.settings.detail_tiles:
+            self._index_tiles(s, image, work)
         image.indexed = True
+
+    def _index_tiles(self, s: Session, image: Image, work: RGBImage) -> int:
+        """Index multi-scale detail tiles so close-ups of small items can be matched."""
+        tiles = detail_tiles(work)
+        if not tiles:
+            return 0
+        vecs = self.embedder.embed([crop(work, t.bbox) for t in tiles])
+        rows = [ImagePart(image_id=image.id, part="tile", bbox=list(t.bbox), score=1.0)
+                for t in tiles]
+        s.add_all(rows)
+        s.flush()
+        self.index.add("tile", np.array([r.id for r in rows]),
+                       np.full(len(rows), image.id, dtype=np.int64), vecs)
+        return len(rows)
+
+    def add_missing_tiles(self, progress: Any = None, should_stop: Any = None) -> int:
+        """Upgrade path: add detail tiles to images indexed before tiles existed."""
+        with self.db.session() as s:
+            have = set(s.scalars(select(ImagePart.image_id).where(ImagePart.part == "tile")))
+            ids = [i for i in s.scalars(select(Image.id).where(
+                Image.review_status != ReviewStatus.rejected).order_by(Image.id)) if i not in have]
+        done = 0
+        for n, image_id in enumerate(ids, start=1):
+            if should_stop and should_stop():
+                break
+            with self.db.session() as s:
+                image = s.get(Image, image_id)
+                if image is None:
+                    continue
+                path = self.settings.images_dir / image.path
+                if not path.exists():
+                    continue
+                img = decode_image(path.read_bytes(), self.settings.max_image_pixels)
+                work, _ = enhance(img, assess_quality(img))
+                self._index_tiles(s, image, work)
+                done += 1
+            if progress:
+                progress(n / max(len(ids), 1), f"tiles {n}/{len(ids)}")
+            if done % 50 == 0:
+                self.index.save()
+        self.index.save()
+        return done
 
     def fit_adapters(self, exclude_image_ids: set[int] | None = None) -> dict[str, Adapter]:
         """Fit one LDA adapter per part on the labelled reference vectors."""

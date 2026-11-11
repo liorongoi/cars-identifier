@@ -99,6 +99,33 @@ class LayoutPartDetector:
         return None
 
 
+# (tile side as a fraction of the image side, step as a fraction of the tile side)
+TILE_SCALES: tuple[tuple[float, float], ...] = ((0.55, 0.6), (0.35, 0.8), (0.22, 1.0))
+
+
+def detail_tiles(img: RGBImage, min_side: int = 48) -> list[PartBox]:
+    """Overlapping square tiles at several scales, so a close-up of a small item (gear knob,
+    vent, switch block, badge) can match the matching region of a full-cabin photo."""
+    h, w = img.shape[:2]
+    out: list[PartBox] = []
+    for frac, step in TILE_SCALES:
+        side = int(min(h, w) * frac)
+        if side < min_side:
+            continue
+        stride = max(1, int(side * step))
+        ys = list(range(0, max(h - side, 0) + 1, stride))
+        xs = list(range(0, max(w - side, 0) + 1, stride))
+        # make sure the right and bottom edges are covered
+        if ys[-1] != h - side:
+            ys.append(h - side)
+        if xs[-1] != w - side:
+            xs.append(w - side)
+        for y in ys:
+            for x in xs:
+                out.append(PartBox("tile", (x, y, x + side, y + side), 1.0, f"tile{frac}"))
+    return out
+
+
 def get_part_detector(kind: str, owl_model: str, models_cache: str,
                       allow_download: bool) -> PartDetector:
     """Build the configured detector; ``auto`` falls back to layout if deep libs are missing."""
