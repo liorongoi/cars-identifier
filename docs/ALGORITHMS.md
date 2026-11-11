@@ -80,3 +80,28 @@ Findings:
 
 The server now runs in `matcher_mode: auto`, which uses the latest benchmark's
 winner (currently `global` with the adapter).
+
+## Make + model only, and small items — 2026-11-11
+
+Classes are now models (owner decision D6); 839 photos, 116 models, same
+photographer-grouped split (120 test photos). "Close-up" = a random 25-45% crop
+of the photo, enlarged (a photo of a small item).
+
+Model top-5, best mode (global + LDA adapter):
+
+| Condition | Detail tiles off | Detail tiles on | Tiles on, no adapter on tiles |
+|---|---|---|---|
+| Full photo | 23% | **28%** | 24% |
+| Low light | 21% | **25%** | — |
+| Person in frame | 26% | **29%** | 21% |
+| Close-up (small item) | **18%** | 14% | 12% |
+
+Findings:
+1. Detail tiles help full photos consistently (+3 to +8 points across conditions
+   and modes); kept on.
+2. Close-ups of small items stay at ~12-18% model top-5 whatever the setting
+   (differences of 4 points = ~5 photos, within noise). The bottleneck is the
+   embedder: CLIP ViT-B/32 sees 224 px images in 32 px patches, too coarse for
+   fine detail on knobs, vents and switches.
+3. Next experiment for small items: a finer-grained backbone (DINOv2 ViT-B/14 or
+   CLIP ViT-L/14, 14 px patches), plus more photos per model.
