@@ -1,0 +1,54 @@
+# Collection sources. Owner decision D2 (see docs/SRS.md):
+#  - open sources and brochures are enabled by default;
+#  - social-network and movie connectors stay off until `legal_approved: true`
+#    is recorded here by someone authorised to approve it.
+wikimedia:
+  enabled: true
+  thumb_width: 1600
+
+openverse:
+  # Open-licence catalogue (Wikimedia, Flickr CC, museums...) via its official API.
+  # Most results originate from Flickr under Creative Commons licences; add
+  # `exclude_providers: [flickr]` to keep only non-social-network origins.
+  enabled: true
+  page_size: 20              # anonymous maximum
+  max_queries_per_model: 2   # anonymous quota is 200 searches/day
+  max_pages: 1
+  exclude_providers: []
+  # Register a free app at https://api.openverse.org/v1/#tag/auth for higher limits:
+  client_id_env: OPENVERSE_CLIENT_ID
+  client_secret_env: OPENVERSE_CLIENT_SECRET
+
+manifest:
+  # Re-download a collection made elsewhere: CSV files from `carid export-manifest`.
+  enabled: true
+  paths: ["data/manifests/*.csv"]
+
+brochure_sites:
+  enabled: true
+  # List pages you are allowed to collect from (manufacturer press/media sites,
+  # brochure archives, review sites whose terms allow it). robots.txt is obeyed.
+  # `model` and `year` are optional; when given they label every image on the page.
+  sites: []
+  #  - make: Toyota
+  #    model: Corolla
+  #    year: 2020
+  #    urls: ["https://example.com/press/corolla-2020-interior"]
+  #    license: "Manufacturer press image"
+
+folder:
+  enabled: true
+  # <path>/<Make>/<Model>/<Year or anything>/*.jpg|*.pdf
+  path: imports
+
+flickr:
+  enabled: false
+  legal_approved: false
+  api_key_env: FLICKR_API_KEY
+  licenses: "1,2,3,4,5,6,9,10"
+
+video_frames:
+  enabled: false
+  legal_approved: false
+  path: imports/videos
+  every_seconds: 2
