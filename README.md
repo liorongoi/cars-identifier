@@ -12,7 +12,9 @@ blur and poor light; shows its evidence.
 ## What it does
 
 1. **Collects** interior images per `Make › Model` from Wikimedia Commons,
-   Openverse (open-licence catalogue, official API), brochure/press pages you list,
+   Openverse (open-licence catalogue, official API), manufacturer press rooms
+   (searched per model: Toyota, Škoda, Nissan, Honda, Subaru, Seat), brochure/press
+   pages you list,
    a local import folder (images + brochure PDFs), and CSV manifests of links.
    Social-network (Flickr API), open-web image search (Brave Search API) and
    movie-frame connectors exist but stay **off** until legal approval is recorded

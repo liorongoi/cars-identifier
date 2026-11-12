@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import quote_plus, urljoin, urlparse
 
 from carid.collector.base import (
     Candidate,
@@ -106,8 +106,10 @@ class _ImgParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.images: list[dict[str, str]] = []
+        self.links: list[tuple[str, str]] = []  # (href, link text)
         self.title = ""
         self._in_title = False
+        self._link: list[str] | None = None  # [href, text so far] while inside <a>
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = {k: v or "" for k, v in attrs}
@@ -121,16 +123,23 @@ class _ImgParser(HTMLParser):
                                     "title": a.get("title", "")})
         elif tag == "a" and re.search(r"\.(jpe?g|png|webp)(\?|$)", a.get("href", ""), re.I):
             self.images.append({"src": a["href"], "alt": a.get("title", ""), "title": ""})
+        elif tag == "a" and a.get("href"):
+            self._link = [a["href"], a.get("title", "")]
         elif tag == "title":
             self._in_title = True
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self._in_title = False
+        elif tag == "a" and self._link is not None:
+            self.links.append((self._link[0], " ".join(self._link[1].split())))
+            self._link = None
 
     def handle_data(self, data: str) -> None:
         if self._in_title:
             self.title += data
+        if self._link is not None and len(self._link[1]) < 300:
+            self._link[1] += " " + data
 
 
 class WebPagesSource(SourceConnector):
@@ -626,3 +635,176 @@ class BraveImageSource(SourceConnector):
 
 
 CONNECTOR_CLASSES[BraveImageSource.name] = BraveImageSource
+
+
+# --------------------------------------------------------------------------- press-site search
+
+_SIZE_SUFFIX = re.compile(r"-(\d{2,4})x(\d{2,4})(?=\.\w{3,4}$)")
+_SKIP_IMAGE = re.compile(r"(logo|icon|sprite|avatar|placeholder|banner-ad|\.svg|\.gif)", re.I)
+
+
+def _url_words(url: str) -> str:
+    """Words from an image or page URL path: '/2021_Corolla-Apex_Interior_001.jpg' ->
+    '2021 Corolla Apex Interior 001'."""
+    path = re.sub(r"^https?://[^/]+", "", url).split("?")[0]
+    path = _SIZE_SUFFIX.sub("", path)
+    path = re.sub(r"\.\w{3,4}$", "", path.rsplit("/", 1)[-1])
+    return " ".join(re.sub(r"[_\-+.%]+|(?<=[a-z])(?=[A-Z])", " ", path).split())
+
+
+def _largest_variants(urls: list[str], max_side: int = 2400) -> list[str]:
+    """Keep one URL per picture: CMSs publish '<name>-768x470.jpg', '<name>-1500x900.jpg'...
+    Choose the largest sized variant up to ``max_side``, else the unsized original."""
+    best: dict[str, tuple[int, str]] = {}
+    for url in urls:
+        m = _SIZE_SUFFIX.search(url.split("?")[0])
+        key = _SIZE_SUFFIX.sub("", url.split("?")[0])
+        if m:
+            side = max(int(m.group(1)), int(m.group(2)))
+            score = side if side <= max_side else 0
+        else:
+            score = max_side // 2  # original of unknown size: below a large sized copy
+        if key not in best or score > best[key][0]:
+            best[key] = (score, url)
+    return [url for _, url in best.values()]
+
+
+_THUMB_MARK = re.compile(r"(?:__?thumb(?:nail)?|-thumbnail|_small|-small)(?=\.\w{3,4}$)", re.I)
+
+
+def _full_size_guess(url: str, min_side: int = 1000) -> str | None:
+    """Full-size address for a listed thumbnail, by the common CMS conventions
+    ('name-272x182.jpg' -> 'name.jpg', 'name__thumb.jpg' -> 'name.jpg'); None when the
+    listed image is already large or follows no known convention."""
+    base = url.split("?")[0]
+    m = _SIZE_SUFFIX.search(base)
+    if m and max(int(m.group(1)), int(m.group(2))) < min_side:
+        return _SIZE_SUFFIX.sub("", base)
+    if _THUMB_MARK.search(base):
+        return _THUMB_MARK.sub("", base)
+    return None
+
+
+class PressSearchSource(SourceConnector):
+    """Manufacturer press rooms searched per model, through the site's own search page.
+
+    For each configured site of the target's make, the search URL is filled with the
+    model name; images on the results page are collected, and with ``follow_links``
+    so are images on result pages (press releases, press kits) whose address or link
+    text names the model. Every image's file name and caption are used for labelling,
+    so a photo of another model on the same page is rejected by the labeller. Pages
+    are fetched politely and robots.txt is obeyed. Config::
+
+        press_sites:
+          enabled: true
+          sites:
+            - make: Toyota
+              search_url: "https://pressroom.toyota.com/?s={query}"
+              query: "{model} interior"
+              follow_links: 0
+              license: "Manufacturer press image (editorial use)"
+    """
+
+    name = "press_sites"
+    description = "Manufacturer press rooms searched per model (robots.txt obeyed)"
+
+    def __init__(self, config: dict[str, Any], http: Any) -> None:
+        super().__init__(config, http)
+        self._fallback: dict[str, str] = {}  # full-size guess -> listed image
+
+    def fetch(self, candidate: Candidate) -> bytes:
+        try:
+            return self.http.download_image(candidate.url)
+        except FetchError:
+            listed = self._fallback.get(candidate.url)
+            if listed is None:
+                raise
+            return self.http.download_image(listed)
+
+    def _page(self, url: str) -> tuple[str, _ImgParser] | None:
+        try:
+            r = self.http.get(url)
+        except FetchError as exc:
+            log.info("press page fetch failed %s: %s", url, exc)
+            return None
+        parser = _ImgParser()
+        parser.feed(r.text)
+        return str(r.url), parser
+
+    def _names(self, target: Target) -> list[str]:
+        return [target.model, *target.model_aliases]
+
+    def _names_model(self, text: str, target: Target) -> bool:
+        return any(_phrase_in(text, n) for n in self._names(target))
+
+    def search(self, target: Target, limit: int) -> Iterator[Candidate]:
+        seen: set[str] = set()
+        default_follow = int(self.config.get("follow_links", 4))
+        for site in self.config.get("sites", []):
+            makes = [str(site.get("make", "")), *[str(a) for a in site.get("make_aliases", [])]]
+            if not any(_phrase_in(m, n) for m in makes
+                       for n in [target.make, *target.make_aliases] if m):
+                continue
+            query = str(site.get("query", "{model}")).format(model=target.model,
+                                                              make=target.make)
+            search_url = str(site["search_url"]).replace("{query}", quote_plus(query))
+            first = self._page(search_url)
+            if first is None:
+                continue
+            pages: list[tuple[str, _ImgParser, bool]] = [(first[0], first[1], False)]
+            follow = int(site.get("follow_links", default_follow))
+            host = urlparse(first[0]).netloc
+            hosts = {host, *[str(h) for h in site.get("link_hosts", [])]}
+            followed: set[str] = set()
+            for href, text in first[1].links:
+                if len(followed) >= follow:
+                    break
+                url = urljoin(first[0], href).split("#")[0]
+                if (urlparse(url).netloc not in hosts or url in followed or url == first[0]
+                        or "search" in url.lower()
+                        or not self._names_model(f"{text} {_url_words(url)}", target)):
+                    continue
+                followed.add(url)
+                page = self._page(url)
+                if page is not None:
+                    pages.append((page[0], page[1], True))
+            for page_url, parser, is_article in pages:
+                urls = []
+                captions: dict[str, str] = {}
+                for img in parser.images:
+                    url = urljoin(page_url, img["src"])
+                    if not url.startswith(("http://", "https://")) or _SKIP_IMAGE.search(url):
+                        continue
+                    urls.append(url)
+                    captions.setdefault(_SIZE_SUFFIX.sub("", url.split("?")[0]),
+                                        " ".join(filter(None, [img["alt"], img["title"]])))
+                for url in _largest_variants(urls):
+                    if url in seen:
+                        continue
+                    own = " ".join(filter(None, [
+                        captions.get(_SIZE_SUFFIX.sub("", url.split("?")[0]), ""),
+                        _url_words(url)]))
+                    # An image whose own name/caption names no model of this make takes
+                    # the article's title (a press release is about one model); search
+                    # pages give none.
+                    page_title = " ".join(parser.title.split())
+                    if is_article and not any(
+                            _phrase_in(own, n)
+                            for n in [*self._names(target), *target.sibling_models]):
+                        own = f"{own} {page_title}"
+                    seen.add(url)
+                    full = _full_size_guess(url)
+                    if full is not None and full not in seen:
+                        self._fallback[full] = url
+                        seen.add(full)
+                        url = full
+                    yield Candidate(
+                        url=url, page_url=page_url, title=own[:300],
+                        extra_text=f"{target.make} {own}",
+                        license=site.get("license", "Manufacturer press image (editorial use)"),
+                        credit=site.get("credit") or f"{target.make} press room")
+                    if len(seen) >= limit:
+                        return
+
+
+CONNECTOR_CLASSES[PressSearchSource.name] = PressSearchSource

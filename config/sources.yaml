@@ -36,6 +36,34 @@ brochure_sites:
   #    urls: ["https://example.com/press/corolla-2020-interior"]
   #    license: "Manufacturer press image"
 
+press_sites:
+  # Manufacturer press rooms, searched per model through the site's own search page.
+  # Press images are published for editorial use; the per-site licence is recorded on
+  # each image. Only sites whose search works without JavaScript or a bot check are
+  # listed (checked 2026-11-12); robots.txt is obeyed. Add more in the same form.
+  enabled: true
+  follow_links: 4      # result pages (press releases/kits) naming the model, per search
+  sites:
+    - make: Toyota
+      search_url: "https://pressroom.toyota.com/?s={query}"
+      query: "{model} interior"
+      follow_links: 0          # results page already shows the photos
+    - make: Skoda
+      make_aliases: ["Škoda"]
+      search_url: "https://www.skoda-storyboard.com/en/?s={query}"
+      query: "{model} interior"
+      follow_links: 0
+    - make: Nissan
+      search_url: "https://usa.nissannews.com/en-US/search?q={query}"
+    - make: Honda
+      search_url: "https://hondanews.com/en-US/search?q={query}"
+    - make: Subaru
+      # No working search page: start from the home page, which links every model.
+      search_url: "https://media.subaru.com/"
+      follow_links: 2
+    - make: Seat
+      search_url: "https://www.seat-mediacenter.com/search.html?q={query}"
+
 folder:
   enabled: true
   # <path>/<Make>/<Model>/<Year or anything>/*.jpg|*.pdf

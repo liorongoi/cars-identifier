@@ -133,3 +133,19 @@ Findings:
    Wikimedia images that the sandbox could not download, plus brochures and
    the user's own folders); then CLIP ViT-L/14 on a GPU server; then
    metric-learning fine-tuning once there are about 30+ photos per model.
+
+## Free image sources reviewed — 2026-11-12
+
+| Source | Decision | Reason |
+|---|---|---|
+| Wikimedia Commons, Openverse | In use | Open licences, official APIs |
+| Manufacturer press rooms | **Added** (`press_sites`) | Sharp, model-named interior photos; editorial use. Six of the 20 pilot makes have a search page that works without JavaScript or a bot check (Toyota, Škoda, Nissan US, Honda US, Subaru US, Seat); the others need their pages listed in `brochure_sites` by hand |
+| Flickr, Brave web search | Built, gated | Social network / unknown licences: need `legal_approved` |
+| Pexels, Pixabay | **Not built** | Their terms forbid scraping and systematic bulk copying, explicitly including for machine-learning purposes |
+| Unsplash | Not built | API terms require showing images from Unsplash's own links (hotlinking), which conflicts with keeping a local reference copy |
+| CompCars research dataset | Owner action | 1,716 models with part images; non-commercial research only; release agreement signed by full-time staff |
+
+Dry run of `press_sites` on two random pilot models per make: Toyota Corolla 10,
+Škoda Fabia 29 / Karoq 10, Honda HR-V 24, Seat Ibiza 12 labelled candidates;
+Nissan and Honda press rooms are US sites, so models not sold in the US (Juke,
+Micra, Jazz) find nothing there.

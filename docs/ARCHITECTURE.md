@@ -23,7 +23,7 @@ src/carid/
 ├── collector/
 │   ├── base.py          Target, Candidate, PoliteClient (throttle, retry, robots.txt), connector ABC
 │   ├── labeler.py       Text → (year range, generation, confidence, interior hint)
-│   ├── sources.py       Wikimedia, brochure pages, folder/PDF, Openverse, manifests, Flickr / Brave web search / video frames (opt-in)
+│   ├── sources.py       Wikimedia, brochure pages, press-room search, folder/PDF, Openverse, manifests, Flickr / Brave web search / video frames (opt-in)
 │   └── runner.py        Targets × sources → label → fetch → ingest; resumable via SeenUrl
 ├── jobs.py              Persistent job queue + worker thread; cancel; re-queue after restart
 ├── evaluation.py        Hold-out split, degradations, top-k/MRR per mode, report

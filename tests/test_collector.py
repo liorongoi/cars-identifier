@@ -490,3 +490,84 @@ def test_brave_source_stops_on_missing_key_or_quota(engine: Engine,
         client, _ = _client(lambda r, s=status: httpx.Response(s))
         with pytest.raises(SourceExhausted, match=words):
             list(BraveImageSource(cfg, client).search(_target(engine), 5))
+
+
+def test_press_search_source_collects_and_follows(engine: Engine) -> None:
+    from carid.collector.labeler import infer_label
+    from carid.collector.sources import PressSearchSource, _largest_variants, _url_words
+
+    assert _url_words("https://x.test/up/2021_Corolla-Apex_Interior_001-1500x900.jpg") \
+        == "2021 Corolla Apex Interior 001"
+    assert _largest_variants(["https://x.test/a-768x470.jpg", "https://x.test/a-1500x900.jpg",
+                              "https://x.test/a.jpg", "https://x.test/b.jpg"]) \
+        == ["https://x.test/a-1500x900.jpg", "https://x.test/b.jpg"]
+    search_html = """<html><title>Search results for roadster</title><body>
+      <img src="/up/Alpha_Roadster_Interior_01-768x470.jpg" alt="">
+      <img src="/up/Alpha_Roadster_Interior_01-1500x900.jpg" alt="">
+      <img src="/up/site-logo.png">
+      <a href="/releases/2012-alpha-roadster-press-kit">Press kit</a>
+      <a href="/releases/alpha-wagon-launch">The new Wagon</a>
+      <a href="https://other.test/alpha-roadster">elsewhere</a>
+      <a href="/search?q=roadster&page=2">Roadster page 2</a>
+    </body></html>"""
+    article_html = """<html><title>2012 Alpha Roadster press kit</title><body>
+      <img src="/att/abc123" alt="Dashboard view">
+      <img src="/att/def456" alt="The 2016 Alpha Wagon parked">
+    </body></html>"""
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/search":
+            return httpx.Response(200, text=search_html)
+        return httpx.Response(200, text=article_html)
+
+    client, _ = _client(handler)
+    src = PressSearchSource({"enabled": True, "sites": [
+        {"make": "Beta", "search_url": "https://press.test/search?q={query}"},
+        {"make": "Alpha", "search_url": "https://press.test/search?q={query}",
+         "query": "{model} interior", "follow_links": 3}]}, client)
+    cands = list(src.search(_target(engine), 10))
+    by_url = {c.url.rsplit("/", 1)[-1]: c for c in cands}
+    assert set(by_url) == {"Alpha_Roadster_Interior_01-1500x900.jpg", "abc123", "def456"}
+    assert "/releases/alpha-wagon-launch" not in requested  # link does not name the model
+    assert requested.count("/search") == 1  # the Beta site is skipped for an Alpha target
+    # An image without its own model name takes the press-kit title; one naming another
+    # model keeps its own caption, so the labeller can reject it.
+    assert "Roadster" in by_url["abc123"].text
+    assert "Roadster" not in by_url["def456"].title
+    assert infer_label(by_url["def456"].text, _target(engine),
+                       title=by_url["def456"].title) is None
+    assert infer_label(by_url["abc123"].text, _target(engine),
+                       title=by_url["abc123"].title) is not None
+
+
+def test_press_source_prefers_full_size_with_fallback(engine: Engine) -> None:
+    from carid.collector.sources import PressSearchSource, _full_size_guess
+
+    assert _full_size_guess("https://x.test/a-272x182.jpg?v=2") == "https://x.test/a.jpg"
+    assert _full_size_guess("https://x.test/a-1500x900.jpg") is None
+    assert _full_size_guess("https://x.test/Outback_31__thumb.jpg") == "https://x.test/Outback_31.jpg"
+    assert _full_size_guess("https://x.test/a.jpg") is None
+    jpeg = to_jpeg(draw_interior(CLASS_STYLES["Alpha/Roadster/2010"], np.random.default_rng(9)))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/robots.txt":
+            return httpx.Response(404)
+        if path == "/search":
+            return httpx.Response(200, text='<img src="/up/Alpha_Roadster_dash-272x182.jpg">'
+                                            '<img src="/up/Alpha_Roadster_wheel-300x200.jpg">')
+        if path == "/up/Alpha_Roadster_dash.jpg":
+            return httpx.Response(404)  # no original: use the listed thumbnail
+        return httpx.Response(200, content=jpeg, headers={"content-type": "image/jpeg"})
+
+    client, _ = _client(handler)
+    src = PressSearchSource({"enabled": True, "sites": [
+        {"make": "Alpha", "search_url": "https://press.test/search?q={query}"}]}, client)
+    cands = list(src.search(_target(engine), 10))
+    assert [c.url for c in cands] == ["https://press.test/up/Alpha_Roadster_dash.jpg",
+                                      "https://press.test/up/Alpha_Roadster_wheel.jpg"]
+    assert all(src.fetch(c) == jpeg for c in cands)
