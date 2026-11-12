@@ -100,10 +100,15 @@ def add_make(name: str, wikidata: bool = True, collect: bool = False) -> None:
 
 
 @app.command()
-def index(rebuild: bool = False, tiles: bool = False, redetect: bool = False) -> None:
-    """Show index sizes, rebuild the index (after changing the embedder), or --tiles to add
-    small-item detail tiles to images indexed before tiles existed."""
+def index(rebuild: bool = False, tiles: bool = False, redetect: bool = False,
+          repair: bool = False) -> None:
+    """Show index sizes, rebuild the index (after changing the embedder), --tiles to add
+    small-item detail tiles to images indexed before tiles existed, or --repair to index
+    images an interrupted job left out."""
     svc = _services()
+    if repair:
+        n = svc.engine.repair_index(progress=lambda f, m: typer.echo(f"{f:6.1%} {m}"))
+        typer.echo(f"indexed {n} missing images")
     if tiles:
         n = svc.engine.add_missing_tiles(progress=lambda f, m: typer.echo(f"{f:6.1%} {m}"))
         typer.echo(f"added detail tiles to {n} images")

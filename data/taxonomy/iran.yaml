@@ -1,0 +1,221 @@
+# Makes and models present on the Iranian market (owner request, 2026-11-12).
+# Load with:  carid init --seed-file data/taxonomy/iran.yaml   (adds to the database)
+#
+# Many cars built in Iran are foreign models under an Iranian badge with the same
+# interior. Those are filed under the original make, with the Iranian badge as an
+# alias, so photos under either name count for the same car:
+#   Fownix -> Chery,  Xtrim -> Exeed,  KMC -> JAC,  Tissan -> Jetour,
+#   IKCO Cheval 2 -> Haval Chitu,  Renault Tondar 90 -> Renault Logan.
+# MVM keeps its own make because its model names differ from Chery's.
+# Model lists were compiled from public sources and general knowledge; verify
+# and extend them in the UI (Add make / Database).
+makes:
+  # ---- Iranian makes
+  - name: Iran Khodro
+    country: Iran
+    aliases: [IKCO, Iran Khodro Company]
+    models:
+      - {name: Samand}
+      - {name: Dena, aliases: [Dena Plus]}
+      - {name: Runna, aliases: [Runna Plus]}
+      - {name: Soren, aliases: [Soren Plus]}
+      - {name: Tara}
+      - {name: Rira}
+      - {name: Arisun}
+      - {name: Paykan}
+  - name: SAIPA
+    country: Iran
+    models:
+      - {name: Pride, aliases: [Saba, Nasim]}
+      - {name: Tiba}
+      - {name: Saina}
+      - {name: Quick}
+      - {name: Shahin}
+      - {name: Atlas}
+      - {name: Sahand}
+  - name: Zamyad
+    country: Iran
+    models:
+      - {name: Z24, aliases: [Zamyad Pickup, Z28]}
+      - {name: Padra}
+      - {name: Karun}
+  - name: MVM
+    country: Iran
+    aliases: [Modiran Vehicle Manufacturing, Modiran Khodro]
+    models:
+      - {name: "110"}
+      - {name: "315"}
+      - {name: "530"}
+      - {name: "550"}
+      - {name: X22}
+      - {name: X33}
+      - {name: X55}
+  - name: Bahman
+    country: Iran
+    aliases: [Bahman Motor, Bahman Group]
+    models:
+      - {name: Capra}
+      - {name: Fidelity}
+      - {name: Dignity}
+      - {name: Respect}
+  # ---- Chinese makes sold or assembled in Iran
+  - name: Chery
+    country: China
+    aliases: [Fownix]
+    models:
+      - {name: Tiggo 2}
+      - {name: Tiggo 3}
+      - {name: Tiggo 5, aliases: [Tiggo 5x]}
+      - {name: Tiggo 7, aliases: [Tiggo 7 Pro]}
+      - {name: Tiggo 8, aliases: [Tiggo 8 Pro]}
+      - {name: Arrizo 5}
+      - {name: Arrizo 6}
+      - {name: Arrizo 8, aliases: [Z8]}
+      - {name: QQ}
+  - name: Exeed
+    country: China
+    aliases: [Xtrim]
+    models:
+      - {name: TXL}
+      - {name: VX}
+      - {name: LX}
+      - {name: RX}
+  - name: JAC
+    country: China
+    aliases: [KMC, Kerman Motor]
+    models:
+      - {name: J4}
+      - {name: J5}
+      - {name: J7, aliases: [A5 Plus]}
+      - {name: S3}
+      - {name: S5}
+      - {name: T8}
+      - {name: K7, aliases: [JS4]}
+  - name: Haval
+    country: China
+    models:
+      - {name: H2}
+      - {name: H6}
+      - {name: H9}
+      - {name: Jolion}
+      - {name: Chitu, aliases: [Cheval 2]}
+  - name: Great Wall
+    country: China
+    aliases: [GWM, Great Wall Motors]
+    models:
+      - {name: Wingle}
+      - {name: Voleex C30, aliases: [C30]}
+      - {name: Hover}
+  - name: Changan
+    country: China
+    models:
+      - {name: CS35, aliases: [CS35 Plus]}
+      - {name: CS55, aliases: [CS55 Plus]}
+      - {name: CS75, aliases: [CS75 Plus]}
+      - {name: Eado}
+      - {name: Alsvin}
+      - {name: UNI-T, aliases: [UNIT]}
+      - {name: UNI-K, aliases: [UNIK]}
+  - name: Dongfeng
+    country: China
+    aliases: [DFM, EAMA]
+    models:
+      - {name: H30 Cross, aliases: [H30]}
+      - {name: S30}
+      - {name: T5 EVO, aliases: [T5]}
+      - {name: Shine, aliases: [Shine Max]}
+  - name: Haima
+    country: China
+    models:
+      - {name: S7}
+      - {name: S5}
+      - {name: 8S}
+      - {name: 7X}
+  - name: Brilliance
+    country: China
+    models:
+      - {name: H220}
+      - {name: H230}
+      - {name: H320}
+      - {name: H330}
+      - {name: V5}
+  - name: FAW
+    country: China
+    aliases: [Besturn, Bestune]
+    models:
+      - {name: B30}
+      - {name: B50}
+      - {name: B70}
+      - {name: T77}
+  - name: Jetour
+    country: China
+    aliases: [Tissan]
+    models:
+      - {name: X50, aliases: [S05]}
+      - {name: X70}
+      - {name: X90}
+      - {name: Dashing}
+  - name: Geely
+    country: China
+    models:
+      - {name: Emgrand, aliases: [Emgrand 7, EC7]}
+      - {name: Emgrand X7, aliases: [X7]}
+      - {name: GC6}
+      - {name: Coolray}
+      - {name: Azkarra}
+  - name: Lifan
+    country: China
+    models:
+      - {name: X60}
+      - {name: X50}
+      - {name: "520"}
+      - {name: "620"}
+      - {name: "820"}
+  - name: BAIC
+    country: China
+    aliases: [Senova]
+    models:
+      - {name: X25}
+      - {name: D20, aliases: [Sabrina]}
+  # ---- Other foreign makes built or widely sold in Iran, not in the pilot list
+  - name: Citroen
+    country: France
+    aliases: [Citroën]
+    models:
+      - {name: Xantia}
+      - {name: C5}
+  - name: Daewoo
+    country: South Korea
+    models:
+      - {name: Cielo, aliases: [Nexia]}
+      - {name: Matiz}
+      - {name: Espero}
+  # ---- Additions to pilot makes: models built or common in Iran
+  - name: Peugeot
+    models:
+      - {name: "405"}
+      - {name: Pars, aliases: [Peugeot Pars, Persia]}
+      - {name: "301"}
+  - name: Renault
+    models:
+      - {name: Logan, aliases: [Tondar 90, Tondar, L90]}
+      - {name: Sandero, aliases: [Sandero Stepway]}
+      - {name: Symbol, aliases: [Thalia]}
+      - {name: Koleos}
+  - name: Kia
+    models:
+      - {name: Pride}
+      - {name: Optima, aliases: [K5, Magentis]}
+  - name: Nissan
+    models:
+      - {name: Maxima}
+      - {name: Teana}
+      - {name: Patrol}
+      - {name: Xterra, aliases: [Roniz, Paladin]}
+  - name: Mazda
+    models:
+      - {name: B-Series, aliases: [B2000, B2500, Cara]}
+  - name: Hyundai
+    models:
+      - {name: Accent, aliases: [Verna]}
+      - {name: Azera, aliases: [Grandeur]}

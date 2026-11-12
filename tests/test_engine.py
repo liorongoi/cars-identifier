@@ -255,3 +255,15 @@ def test_rebuild_with_redetect_replaces_boxes(populated: Engine) -> None:
     with populated.db.session() as s:
         after = set(s.scalars(select(ImagePart.id)))
     assert not (before & after)
+
+
+def test_repair_index_adds_missing_images(populated: Engine) -> None:
+    engine = populated
+    whole = engine.index.get("whole")
+    assert whole is not None
+    before = len(whole)
+    victim = int(whole.raw_vectors()[1][0])
+    engine.index.drop_images({victim})
+    assert len(whole) == before - 1
+    assert engine.repair_index() == 1
+    assert len(whole) == before and engine.repair_index() == 0

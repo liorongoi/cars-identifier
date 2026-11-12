@@ -643,6 +643,24 @@ class Engine:
                                  "make_id": label.make_id, "model_id": label.model_id}}))
         self.invalidate_labels()
 
+    def repair_index(self, progress: Any = None) -> int:
+        """Index images that are in the database but missing from the index (e.g. after
+        a job was interrupted before the index was saved)."""
+        whole = self.index.get("whole")
+        have = set(whole.raw_vectors()[1].tolist()) if whole is not None else set()
+        with self.db.session() as s:
+            ids = [i for i in s.scalars(select(Image.id).where(
+                Image.review_status != ReviewStatus.rejected).order_by(Image.id))
+                if i not in have]
+        for n, image_id in enumerate(ids, start=1):
+            self._reindex_one(image_id)
+            if progress:
+                progress(n / len(ids), f"repaired {n}/{len(ids)}")
+        if ids:
+            self.index.save()
+            self.invalidate_labels()
+        return len(ids)
+
     def _reindex_one(self, image_id: int) -> None:
         with self.db.session() as s:
             image = s.get(Image, image_id)
