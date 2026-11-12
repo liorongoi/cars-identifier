@@ -54,7 +54,8 @@ def make_http(settings: Settings) -> PoliteClient:
     return PoliteClient(settings.user_agent, timeout=settings.request_timeout_s,
                         min_interval=settings.min_request_interval_s,
                         max_retries=settings.max_retries,
-                        max_bytes=settings.max_download_mb * 1024 * 1024)
+                        max_bytes=settings.max_download_mb * 1024 * 1024,
+                        blocked_host_suffixes=tuple(settings.blocked_host_suffixes))
 
 
 def build_targets(session: Session, make_ids: list[int] | None = None,

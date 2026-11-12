@@ -70,10 +70,14 @@ class PoliteClient:
                  max_retries: int = 5, max_bytes: int = 25 * 1024 * 1024,
                  max_wait: float = 60.0,
                  transport: httpx.BaseTransport | None = None,
-                 sleep: Any = time.sleep) -> None:
+                 sleep: Any = time.sleep,
+                 blocked_host_suffixes: tuple[str, ...] = ()) -> None:
+        self.blocked_host_suffixes = tuple(s.lower().lstrip(".") for s in blocked_host_suffixes)
         self.client = httpx.Client(
             headers={"User-Agent": user_agent}, timeout=timeout, follow_redirects=True,
             transport=transport,
+            # A request hook also covers redirects and robots.txt lookups.
+            event_hooks={"request": [self._refuse_blocked]},
         )
         self.user_agent = user_agent
         self.min_interval = min_interval
@@ -87,6 +91,12 @@ class PoliteClient:
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._lock = threading.Lock()
         self._sleep = sleep
+
+    def _refuse_blocked(self, request: httpx.Request) -> None:
+        host = request.url.host.lower()
+        for suffix in self.blocked_host_suffixes:
+            if host == suffix or host.endswith("." + suffix):
+                raise FetchError(f"host {host} is blocked by configuration (.{suffix})")
 
     def close(self) -> None:
         self.client.close()

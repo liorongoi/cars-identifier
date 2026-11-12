@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     )
     request_timeout_s: float = 30.0
     min_request_interval_s: float = 1.0
+    # The collector never contacts hosts under these domain suffixes (owner decision
+    # 2026-11-12: no requests to Iranian sites), including via redirects.
+    blocked_host_suffixes: list[str] = ["ir"]
     max_retries: int = 5
     max_download_mb: int = 25
     min_image_side: int = 320

@@ -19,6 +19,7 @@ from carid.collector.sources import (
     WikimediaCommonsSource,
     search_queries,
 )
+from carid.config import Settings
 from carid.engine import Engine
 from carid.models import Image, SeenUrl
 from tests.conftest import CLASS_STYLES, draw_interior, to_jpeg
@@ -571,3 +572,27 @@ def test_press_source_prefers_full_size_with_fallback(engine: Engine) -> None:
     assert [c.url for c in cands] == ["https://press.test/up/Alpha_Roadster_dash.jpg",
                                       "https://press.test/up/Alpha_Roadster_wheel.jpg"]
     assert all(src.fetch(c) == jpeg for c in cands)
+
+
+def test_blocked_host_suffixes_are_never_contacted(settings: Settings) -> None:
+    from carid.collector.runner import make_http
+
+    assert "ir" in settings.blocked_host_suffixes
+    assert make_http(settings).blocked_host_suffixes == ("ir",)
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.host)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.host == "ok.test":
+            return httpx.Response(302, headers={"Location": "https://www.example.ir/a.jpg"})
+        return httpx.Response(200)
+
+    c = PoliteClient("test-agent", min_interval=0, max_retries=1, sleep=lambda s: None,
+                     transport=httpx.MockTransport(handler), blocked_host_suffixes=(".ir",))
+    for url in ("https://example.ir/x", "https://sub.example.ir/x", "https://ok.test/redirect"):
+        with pytest.raises(FetchError, match="blocked"):
+            c.get(url)
+    assert c.get("https://air.test/x").status_code == 200  # suffix match is per label
+    assert not any(h.endswith(".ir") for h in seen)
